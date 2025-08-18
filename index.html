@@ -1,0 +1,70 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhilPapers Interactive Nebula</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .animate-fade-in {
+        animation: fadeIn 0.15s ease-out;
+      }
+      .simulated-highlight {
+        background-color: rgba(58, 110, 255, 0.5);
+      }
+      .latex-inline {
+        font-family: 'Times New Roman', serif;
+        font-style: italic;
+        color: #a7f3d0; /* A light green for visibility */
+      }
+      /* Custom styles for blockquotes in the StudioPanel editor */
+      .prose blockquote {
+        background-color: rgba(55, 65, 81, 0.3); /* gray-700 with opacity */
+        border-left: 4px solid #38bdf8; /* sky-400 */
+        padding: 0.5rem 1rem;
+        margin: 1rem 0;
+        border-radius: 0.25rem;
+        font-style: normal;
+        color: #d1d5db; /* gray-300 */
+      }
+      .prose blockquote p {
+        margin: 0;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "d3": "https://esm.sh/d3@^7.9.0",
+    "@google/genai": "https://esm.sh/@google/genai",
+    "path": "https://esm.sh/path@^0.12.7",
+    "vite": "https://esm.sh/vite@^7.0.5",
+    "d3-scale": "https://esm.sh/d3-scale@^4.0.2",
+    "d3-scale-chromatic": "https://esm.sh/d3-scale-chromatic@^3.1.0",
+    "d3-selection": "https://esm.sh/d3-selection@^3.0.0",
+    "d3-force": "https://esm.sh/d3-force@^3.0.0",
+    "d3-zoom": "https://esm.sh/d3-zoom@^3.0.0",
+    "d3-drag": "https://esm.sh/d3-drag@^3.0.0",
+    "d3-color": "https://esm.sh/d3-color@^3.1.0",
+    "d3-transition": "https://esm.sh/d3-transition@^3.0.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-black">
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
