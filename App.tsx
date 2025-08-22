@@ -1,7 +1,10 @@
+
+
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { parseMarkdown, flattenData } from './services/dataParser';
-import { D3Node, D3Link, Publication, CustomRelationshipType, MapNode, KindleNote, ImportedNoteSource, ConfirmationRequestHandler } from './types';
+import { D3Node, D3Link, Publication, CustomRelationshipType, MapNode, KindleNote, ImportedNoteSource, ConfirmationRequestHandler, ConceptualMap, UserNote, TrackedFeed, ResearchAnalysisData } from './types';
 import NebulaGraph from './components/NebulaGraph';
 import InfoPanel from './components/InfoPanel';
 import SearchInput from './components/SearchInput';
@@ -12,10 +15,11 @@ import MapTray from './components/MapTray';
 import FeedPage from './components/FeedPage';
 import SettingsModal from './components/SettingsModal';
 import ProjectSwitcher from './components/ProjectSwitcher';
+import MapSwitcher from './components/MapSwitcher';
 import ProjectDiaryPanel from './components/ProjectDiaryPanel';
 import BeliefFlipChallenge from './components/BeliefFlipChallenge';
 import ConfirmDialog from './components/ConfirmDialog';
-import { BrainCircuit, SettingsIcon, DiaryIcon, FlaskConicalIcon, LightbulbIcon, BookOpenIcon } from './components/icons';
+import { BrainCircuit, SettingsIcon, DiaryIcon, FlaskConicalIcon, LightbulbIcon, BookOpenIcon, X, RefreshCw, GraduationCapIcon, ChevronDown } from './components/icons';
 import { useSessionManager } from './hooks/useSessionManager';
 import { useFeedManager } from './hooks/useFeedManager';
 import { useNebula } from './hooks/useNebula';
@@ -23,6 +27,7 @@ import { useBeliefFlipChallenge } from './hooks/useBeliefFlipChallenge';
 import StudioPanel from './components/MapBuilder/Panels/StudioPanel';
 import NotesInbox from './components/NotesInbox';
 import * as mapBuilderService from './services/mapBuilderService';
+import * as feedService from './services/feedService';
 
 // I. Relações de Inferência e Fundamentação (Greens/Blues)
 const inferenceAndFoundation = [
@@ -52,6 +57,7 @@ const structureAndComposition = [
     { type: 'É uma Propriedade de', color: '#eab308', description: 'A é uma característica ou atributo de B.' }, // yellow-500
     { type: 'É um Tipo de', color: '#9ca3af', description: 'Relação taxonômica. O conceito de origem é uma categoria geral para o conceito de destino.' }, // gray-400
     { type: 'É um Token de', color: '#6b7280', description: 'O conceito de origem é uma instância particular da categoria geral do conceito de destino.' }, // gray-500
+    { type: 'Undefined', color: '#374151', description: 'Um tipo de relação não especificado para quando nenhum dos outros se aplica.' }, // gray-700
 ];
 
 const defaultRelationshipTypes = [
@@ -131,6 +137,15 @@ const App: React.FC = () => {
     const [isArgumentStudioOpen, setIsArgumentStudioOpen] = useState(false);
     const [isChallengeOpen, setIsChallengeOpen] = useState(false);
     const [initialWorkbenchData, setInitialWorkbenchData] = useState<any>(null);
+    const [notesToPlace, setNotesToPlace] = useState<KindleNote[] | null>(null);
+
+    // Research Analysis State
+    const [isResearchAnalysisOpen, setIsResearchAnalysisOpen] = useState(false);
+    const [researchAnalysisData, setResearchAnalysisData] = useState<ResearchAnalysisData | null>(null);
+    type LoadingState = 'idle' | 'fetching' | 'analyzing' | 'done' | 'error';
+    const [researchAnalysisLoadingState, setResearchAnalysisLoadingState] = useState<LoadingState>('idle');
+    const [currentAnalysisNodeName, setCurrentAnalysisNodeName] = useState<string | null>(null);
+    const [publicationTitleToUrlMap, setPublicationTitleToUrlMap] = useState<Map<string, string>>(new Map());
     
     // --- Confirmation Dialog State ---
     const [confirmation, setConfirmation] = useState<{
@@ -163,6 +178,15 @@ const App: React.FC = () => {
     };
 
     // --- Derived State and Memos ---
+    const activeMap = useMemo(() => {
+        if (!activeProjectData || !activeProjectData.activeMapId) return null;
+        return activeProjectData.maps.find(m => m.id === activeProjectData.activeMapId);
+    }, [activeProjectData]);
+
+    const activeMapLayout = useMemo(() => {
+        return activeMap ? activeMap.layout : { nodes: [], links: [], logicalConstructs: [] };
+    }, [activeMap]);
+
     const allRelationshipTypes = useMemo(() => {
         const disabledDefaults = new Set(session.disabledDefaultTypes || []);
         const disabledCustoms = new Set(session.disabledCustomTypes || []);
@@ -215,7 +239,101 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeProject?.id]);
 
-    // --- Handlers ---
+    // --- Map Management Handlers ---
+    const handleCreateMap = useCallback((name: string) => {
+        const newMap: ConceptualMap = {
+            id: `map_${Date.now()}`,
+            name,
+            layout: { nodes: [], links: [], logicalConstructs: [] },
+        };
+        updateActiveProjectData(d => ({
+            ...d,
+            maps: [...d.maps, newMap],
+            activeMapId: newMap.id,
+        }));
+    }, [updateActiveProjectData]);
+
+    const handleSwitchMap = useCallback((mapId: string) => {
+        updateActiveProjectData(d => ({ ...d, activeMapId: mapId }));
+    }, [updateActiveProjectData]);
+
+    const handleRenameMap = useCallback((mapId: string, newName: string) => {
+        updateActiveProjectData(d => ({
+            ...d,
+            maps: d.maps.map(m => m.id === mapId ? { ...m, name: newName } : m)
+        }));
+    }, [updateActiveProjectData]);
+
+    const handleDeleteMap = useCallback((mapId: string) => {
+        updateActiveProjectData(d => {
+            const remainingMaps = d.maps.filter(m => m.id !== mapId);
+            if (remainingMaps.length === 0) {
+                const newMap: ConceptualMap = { id: `map_${Date.now()}`, name: 'Main Map', layout: { nodes: [], links: [], logicalConstructs: [] } };
+                return { ...d, maps: [newMap], activeMapId: newMap.id };
+            }
+            const newActiveMapId = d.activeMapId === mapId ? remainingMaps[0].id : d.activeMapId;
+            return { ...d, maps: remainingMaps, activeMapId: newActiveMapId };
+        });
+    }, [updateActiveProjectData]);
+
+    const handleSetLayout = useCallback((updater: any) => {
+        updateActiveProjectData(d => {
+            if (!d.activeMapId) return d;
+            return {
+                ...d,
+                maps: d.maps.map(m => {
+                    if (m.id === d.activeMapId) {
+                        const newLayout = typeof updater === 'function' ? updater(m.layout) : updater;
+                        return { ...m, layout: newLayout };
+                    }
+                    return m;
+                })
+            };
+        });
+    }, [updateActiveProjectData]);
+
+    // --- Research Analysis Handler ---
+    const handleAnalyzeResearchTrends = useCallback(async (feed: TrackedFeed) => {
+        setIsResearchAnalysisOpen(true);
+        setResearchAnalysisLoadingState('fetching');
+        setCurrentAnalysisNodeName(feed.nodeName);
+        setResearchAnalysisData(null);
+        setPublicationTitleToUrlMap(new Map());
+
+        try {
+            const { publications } = await feedService.fetchFullFeed(feed.url, feed.nodeName, 50);
+            
+            const titleToUrl = new Map<string, string>();
+            publications.forEach(p => {
+                titleToUrl.set(p.title, p.link);
+            });
+            setPublicationTitleToUrlMap(titleToUrl);
+
+            if (publications.length < 10) {
+                throw new Error("Not enough recent publications found to perform a meaningful analysis.");
+            }
+            
+            setResearchAnalysisLoadingState('analyzing');
+
+            const publicationsList = publications.map(p => ({ title: p.title, author: p.author }));
+            const { data: analysisData, provenance } = await feedService.analyzeResearchTrends(ai, feed.nodeName, publicationsList);
+            
+            logActivity('ANALYZE_RESEARCH_TRENDS', {
+                conceptName: feed.nodeName,
+                publicationCount: publications.length,
+                provenance
+            });
+            
+            setResearchAnalysisData(analysisData);
+            setResearchAnalysisLoadingState('done');
+
+        } catch (error) {
+            console.error("Failed to analyze research trends:", error);
+            setResearchAnalysisLoadingState('error');
+        }
+    }, [ai, logActivity]);
+
+    // --- Other Handlers ---
     const handleUpdateCustomRelationshipTypes = useCallback((updater: (currentTypes: CustomRelationshipType[]) => CustomRelationshipType[]) => {
         setSession(prev => ({
             ...prev,
@@ -281,7 +399,12 @@ const App: React.FC = () => {
 
     const handleTrayConceptAdd = useCallback((node: D3Node) => {
         updateActiveProjectData(d => {
-            if (d.mapLayout.nodes.some(n => n.id === node.id)) {
+            if (!d.activeMapId) return d;
+            const activeMapIndex = d.maps.findIndex(m => m.id === d.activeMapId);
+            if (activeMapIndex === -1) return d;
+
+            const activeMap = d.maps[activeMapIndex];
+            if (activeMap.layout.nodes.some(n => n.id === node.id)) {
                 return {
                     ...d,
                     mapTrayConceptIds: d.mapTrayConceptIds.filter(id => id !== node.id),
@@ -290,7 +413,7 @@ const App: React.FC = () => {
     
             let newX: number;
             let newY: number;
-            const nodesOnMap = d.mapLayout.nodes;
+            const nodesOnMap = activeMap.layout.nodes;
             const newNodeWidth = 150;
     
             if (nodesOnMap.length > 0) {
@@ -316,13 +439,14 @@ const App: React.FC = () => {
                 width: newNodeWidth,
                 height: 40,
             };
-    
+            
+            const newLayout = { ...activeMap.layout, nodes: [...activeMap.layout.nodes, newNode] };
+            const newMaps = [...d.maps];
+            newMaps[activeMapIndex] = { ...activeMap, layout: newLayout };
+
             return {
                 ...d,
-                mapLayout: {
-                    ...d.mapLayout,
-                    nodes: [...d.mapLayout.nodes, newNode],
-                },
+                maps: newMaps,
                 mapTrayConceptIds: d.mapTrayConceptIds.filter(id => id !== node.id),
             };
         });
@@ -374,12 +498,12 @@ const App: React.FC = () => {
     }, [setSession]);
 
     const handleExportMapData = useCallback(async (): Promise<{ success: boolean; message: string }> => {
-        if (!activeProjectData) return { success: false, message: "No active project to export." };
+        if (!activeMap) return { success: false, message: "No active map to export." };
     
-        const { nodes, links } = activeProjectData.mapLayout;
+        const { nodes, links } = activeMapLayout;
         const exportableData = {
             graph: {
-                metadata: { projectName: activeProject?.name, exportDate: new Date().toISOString() },
+                metadata: { projectName: activeProject?.name, mapName: activeMap.name, exportDate: new Date().toISOString() },
                 nodes: nodes.map(node => ({
                     id: node.id, label: node.name, isAiGenerated: !!node.isAiGenerated,
                 })),
@@ -397,7 +521,8 @@ const App: React.FC = () => {
             const a = document.createElement('a');
             a.href = url;
             const safeProjectName = activeProject?.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            a.download = `concept_map_${safeProjectName}.json`;
+            const safeMapName = activeMap.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            a.download = `concept_map_${safeProjectName}_${safeMapName}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -406,7 +531,7 @@ const App: React.FC = () => {
         } catch (error) {
             return { success: false, message: "An error occurred during export." };
         }
-    }, [activeProject, activeProjectData]);
+    }, [activeProject, activeMap, activeMapLayout]);
 
     const handleDeconstructArgument = (deconstruction: { premises: string[], conclusion: string }) => {
         setIsArgumentStudioOpen(false);
@@ -464,16 +589,21 @@ const App: React.FC = () => {
             shape: 'rect', width: 150, height: 40, isAiGenerated: true,
         };
 
-        updateActiveProjectData(d => ({
-            ...d,
-            mapLayout: { ...d.mapLayout, nodes: [...d.mapLayout.nodes, placeholderNode] }
-        }));
+        handleSetLayout(l => ({ ...l, nodes: [...l.nodes, placeholderNode] }));
         
         handleMarkNotesAsProcessed([note.id]);
 
         try {
-            const { title, provenance } = await mapBuilderService.synthesizeNoteTitle(ai, note.text);
             const source = activeProjectData?.importedNoteSources?.find(s => s.id === note.sourceId);
+            
+            // Gather context for the new prompt
+            const existingMapConcepts = (activeMapLayout.nodes || [])
+                .map(n => n.name)
+                .filter(name => name !== 'Synthesizing...') // Exclude placeholders
+                .sort(() => 0.5 - Math.random()) // Shuffle
+                .slice(0, 10); // Take up to 10 random concepts
+
+            const { title, provenance } = await mapBuilderService.synthesizeNoteTitle(ai, note, source, existingMapConcepts);
 
             logActivity('ADD_NOTE_TO_MAP', {
                 title: source?.title || 'Unknown Source',
@@ -490,23 +620,21 @@ const App: React.FC = () => {
                 sourceNotes: [note],
             };
 
-            updateActiveProjectData(d => ({
-                ...d,
-                mapLayout: {
-                    ...d.mapLayout,
-                    nodes: d.mapLayout.nodes.map(n => n.id === tempId ? finalNode : n)
-                }
+            handleSetLayout(l => ({
+                ...l,
+                nodes: l.nodes.map(n => n.id === tempId ? finalNode : n)
             }));
 
         } catch (error) {
             console.error("Failed to synthesize note title:", error);
+            handleSetLayout(l => ({ ...l, nodes: l.nodes.filter(n => n.id !== tempId) }));
+            // un-mark as processed
             updateActiveProjectData(d => ({
                 ...d,
-                mapLayout: { ...d.mapLayout, nodes: d.mapLayout.nodes.filter(n => n.id !== tempId) },
                 processedNoteIds: (d.processedNoteIds || []).filter(id => id !== note.id)
             }));
         }
-    }, [ai, updateActiveProjectData, handleMarkNotesAsProcessed, logActivity, activeProjectData?.importedNoteSources]);
+    }, [ai, handleSetLayout, handleMarkNotesAsProcessed, logActivity, activeProjectData?.importedNoteSources, updateActiveProjectData, activeMapLayout.nodes]);
 
     const handleAddMultipleNotesToMap = useCallback(async (notes: KindleNote[], position: { x: number; y: number }) => {
         const gridCols = Math.ceil(Math.sqrt(notes.length));
@@ -526,39 +654,53 @@ const App: React.FC = () => {
     }, [handleAddNoteToMap]);
     
     const handleAttachSourceNote = useCallback((nodeId: string | number, notes: KindleNote[]) => {
-        updateActiveProjectData(d => ({
-            ...d,
-            mapLayout: {
-                ...d.mapLayout,
-                nodes: d.mapLayout.nodes.map(n => {
-                    if (n.id === nodeId) {
-                        const existingNotes = new Map((n.sourceNotes || []).map(sn => [sn.id, sn]));
-                        notes.forEach(newNote => existingNotes.set(newNote.id, newNote));
-                        return { ...n, sourceNotes: Array.from(existingNotes.values()) };
-                    }
-                    return n;
-                })
-            }
+        handleSetLayout(l => ({
+            ...l,
+            nodes: l.nodes.map(n => {
+                if (n.id === nodeId) {
+                    const existingNotes = new Map((n.sourceNotes || []).map(sn => [sn.id, sn]));
+                    notes.forEach(newNote => existingNotes.set(newNote.id, newNote));
+                    return { ...n, sourceNotes: Array.from(existingNotes.values()) };
+                }
+                return n;
+            })
         }));
         handleMarkNotesAsProcessed(notes.map(n => n.id));
-    }, [updateActiveProjectData, handleMarkNotesAsProcessed]);
+    }, [handleSetLayout, handleMarkNotesAsProcessed]);
     
     const handleAppendToNodeNotes = useCallback((nodeId: string | number, notes: KindleNote[]) => {
-        updateActiveProjectData(d => ({
-            ...d,
-            mapLayout: {
-                ...d.mapLayout,
-                nodes: d.mapLayout.nodes.map(n => {
-                    if (n.id === nodeId) {
-                        const newContent = notes.map(note => `<blockquote>${note.text}</blockquote>`).join('');
-                        return { ...n, notes: (n.notes || '') + newContent };
-                    }
-                    return n;
-                })
-            }
+        handleSetLayout(l => ({
+            ...l,
+            nodes: l.nodes.map(n => {
+                if (n.id === nodeId) {
+                    const newNotes: UserNote[] = notes.map((note, index) => {
+                        const now = Date.now();
+                        return {
+                            id: `note_${now}_${Math.random().toString(36).substring(2, 9)}_${index}`,
+                            title: `From: ${note.heading}`,
+                            content: `<blockquote><p>${note.text}</p></blockquote>`,
+                            createdAt: now,
+                            updatedAt: now,
+                        };
+                    });
+                    const updatedUserNotes = [...(n.userNotes || []), ...newNotes];
+                    const { notes: oldNotes, ...restOfNode } = n as MapNode & { notes?: string };
+                    return { ...restOfNode, userNotes: updatedUserNotes };
+                }
+                return n;
+            })
         }));
         handleMarkNotesAsProcessed(notes.map(n => n.id));
-    }, [updateActiveProjectData, handleMarkNotesAsProcessed]);
+    }, [handleSetLayout, handleMarkNotesAsProcessed]);
+
+    const handleAddSelectedNotesToMap = useCallback((notes: KindleNote[]) => {
+        setNotesToPlace(notes);
+        setIsNotesInboxOpen(false); // Close inbox to reveal map for placement
+    }, []);
+
+    const handleClearNotesToPlace = useCallback(() => {
+        setNotesToPlace(null);
+    }, []);
 
 
     // --- Render Logic ---
@@ -584,8 +726,8 @@ const App: React.FC = () => {
             case 'map':
                 return (
                     <MapBuilder
-                        layout={activeProjectData.mapLayout}
-                        setLayout={(updater) => updateActiveProjectData(d => ({ ...d, mapLayout: typeof updater === 'function' ? updater(d.mapLayout) : updater }))}
+                        layout={activeMapLayout}
+                        setLayout={handleSetLayout}
                         logActivity={logActivity}
                         relationshipTypes={allRelationshipTypes}
                         onExportMapData={handleExportMapData}
@@ -599,6 +741,9 @@ const App: React.FC = () => {
                         onAddMultipleNotesToMap={handleAddMultipleNotesToMap}
                         onAttachSourceNote={handleAttachSourceNote}
                         onAppendToNodeNotes={handleAppendToNodeNotes}
+                        onRequestConfirmation={requestConfirmation}
+                        notesToPlace={notesToPlace}
+                        onClearNotesToPlace={handleClearNotesToPlace}
                     />
                 );
             case 'feed':
@@ -612,6 +757,7 @@ const App: React.FC = () => {
                         onMarkAsSeen={handleMarkAsSeen}
                         onRefreshSingleFeed={handleRefreshSingleFeed}
                         logActivity={logActivity}
+                        onAnalyzeResearch={handleAnalyzeResearchTrends}
                     />
                 );
             default: return null;
@@ -644,6 +790,7 @@ const App: React.FC = () => {
                     onUpdateSourceMetadata={handleUpdateNoteSourceMetadata}
                     onMarkNotesAsProcessed={handleMarkNotesAsProcessed}
                     onRequestConfirmation={requestConfirmation}
+                    onAddSelectedNotesToMap={handleAddSelectedNotesToMap}
                 />
             )}
             {renderView()}
@@ -674,6 +821,17 @@ const App: React.FC = () => {
                         onRenameProject={handleRenameProject}
                         onRequestConfirmation={requestConfirmation}
                     />
+                    {currentView === 'map' && activeProjectData && (
+                        <MapSwitcher
+                            maps={activeProjectData.maps}
+                            activeMap={activeMap}
+                            onCreateMap={handleCreateMap}
+                            onSwitchMap={handleSwitchMap}
+                            onDeleteMap={handleDeleteMap}
+                            onRenameMap={handleRenameMap}
+                            onRequestConfirmation={requestConfirmation}
+                        />
+                    )}
                 </div>
                  <div className="flex items-center gap-2 pointer-events-auto">
                     {currentView === 'map' && (
@@ -732,15 +890,16 @@ const App: React.FC = () => {
                     ai={ai}
                     // Props for note-taking mode, not used in analysis mode
                     state={{ nodeId: '', x: window.innerWidth / 2, y: window.innerHeight / 2 }}
-                    initialNotes=""
+                    initialUserNotes={[]}
+                    sourceNotes={[]}
                     nodeName=""
-                    onUpdateContent={() => {}}
+                    onUpdateUserNotes={() => {}}
                     onLogEdit={() => {}}
                     logActivity={logActivity}
                 />
             )}
 
-            {currentView === 'map' && activeProjectData.mapLayout.nodes.length === 0 && (
+            {currentView === 'map' && activeMapLayout.nodes.length === 0 && (
                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-gray-400 pointer-events-none z-0">
                     <BrainCircuit className="w-24 h-24 mx-auto text-gray-600"/>
                     <h2 className="text-2xl mt-4 font-bold">Conceptual Map Builder</h2>
@@ -775,6 +934,131 @@ const App: React.FC = () => {
                 title={confirmation.title}
                 confirmText={confirmation.confirmText}
             />
+            
+            <ResearchAnalysisModal
+                isOpen={isResearchAnalysisOpen}
+                onClose={() => setIsResearchAnalysisOpen(false)}
+                loadingState={researchAnalysisLoadingState}
+                data={researchAnalysisData}
+                nodeName={currentAnalysisNodeName}
+                publicationTitleToUrlMap={publicationTitleToUrlMap}
+            />
+        </div>
+    );
+};
+
+const ResearchAnalysisModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    loadingState: 'idle' | 'fetching' | 'analyzing' | 'done' | 'error';
+    data: ResearchAnalysisData | null;
+    nodeName: string | null;
+    publicationTitleToUrlMap: Map<string, string>;
+}> = ({ isOpen, onClose, loadingState, data, nodeName, publicationTitleToUrlMap }) => {
+    if (!isOpen) return null;
+
+    const getLoadingMessage = () => {
+        switch (loadingState) {
+            case 'fetching': return `Fetching the 50 most recent publications in '${nodeName}'...`;
+            case 'analyzing': return `The AI is synthesizing themes and identifying patterns...`;
+            case 'error': return `An error occurred. The AI could not complete the analysis. This may be due to a lack of recent publications or a network issue.`;
+            default: return 'Preparing analysis...';
+        }
+    };
+
+    return (
+        <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
+            onClick={onClose}
+            role="dialog"
+            aria-modal="true"
+        >
+            <div
+                className="bg-gray-800 rounded-xl border border-gray-600 shadow-2xl w-full max-w-3xl text-white flex flex-col max-h-[90vh]"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex justify-between items-center p-4 border-b border-gray-700 flex-shrink-0">
+                    <h2 className="text-xl font-bold text-blue-300 flex items-center gap-2">
+                        <GraduationCapIcon className="w-6 h-6"/>
+                        Research Overview: {nodeName}
+                    </h2>
+                    <button onClick={onClose} className="p-1 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white" aria-label="Close">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="p-6 overflow-y-auto">
+                    {loadingState !== 'done' ? (
+                        <div className="flex flex-col items-center justify-center h-64 text-center">
+                            {loadingState !== 'error' && <RefreshCw className="w-10 h-10 text-blue-400 animate-spin" />}
+                            <p className={`mt-4 text-lg ${loadingState === 'error' ? 'text-red-400' : 'text-gray-300'}`}>
+                                {getLoadingMessage()}
+                            </p>
+                        </div>
+                    ) : data ? (
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-100 mb-2">General Summary</h3>
+                                <p className="text-gray-300 leading-relaxed">{data.generalSummary}</p>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-100 mb-3">Key Themes</h3>
+                                <div className="space-y-3">
+                                    {data.keyThemes.map((theme, index) => (
+                                        <details key={index} className="bg-gray-900/50 rounded-lg group" open={index < 2}>
+                                            <summary className="flex justify-between items-center p-3 cursor-pointer list-none">
+                                                <span className="font-semibold text-cyan-300">{theme.theme}</span>
+                                                <ChevronDown className="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform" />
+                                            </summary>
+                                            <div className="px-4 pb-4 border-t border-gray-700">
+                                                <p className="text-gray-300 mt-3 mb-2">{theme.description}</p>
+                                                <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Representative Titles</h5>
+                                                <ul className="list-disc list-inside space-y-1 text-sm text-gray-400">
+                                                    {theme.representativeTitles.map((title, i) => {
+                                                        const url = publicationTitleToUrlMap.get(title);
+                                                        return (
+                                                            <li key={i}>
+                                                                {url ? (
+                                                                    <a href={url} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-200 hover:underline">
+                                                                        {title}
+                                                                    </a>
+                                                                ) : (
+                                                                    title
+                                                                )}
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            </div>
+                                        </details>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-100 mb-2">Potential Debates</h3>
+                                <p className="text-gray-300 leading-relaxed">{data.potentialDebates}</p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-100 mb-2">Notable Authors</h3>
+                                    <ul className="list-disc list-inside space-y-1 text-gray-300">
+                                        {data.notableAuthors.map(author => <li key={author}>{author}</li>)}
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-100 mb-2">Future Questions</h3>
+                                    <ol className="list-decimal list-inside space-y-1 text-gray-300">
+                                        {data.futureQuestions.map(q => <li key={q}>{q}</li>)}
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+                <div className="flex-shrink-0 p-3 bg-gray-900/50 text-xs text-gray-500 border-t border-gray-700 text-center">
+                    Analysis generated by AI based on the titles of up to 50 recent publications. The content of the articles was not analyzed.
+                </div>
+            </div>
         </div>
     );
 };

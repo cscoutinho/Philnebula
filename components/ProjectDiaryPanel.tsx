@@ -1,6 +1,6 @@
 import React from 'react';
 import { ProjectActivity, ProjectActivityType } from '../types';
-import { ChevronLeft, BrainCircuit, Network, PlusCircle, LinkIcon, RssIcon, SparkleIcon, DiaryIcon, ExternalLinkIcon, ReplaceIcon, HistoryIcon, MessageSquareQuote, ScaleIcon, FlaskConicalIcon, Edit, LightbulbIcon, Check, RefreshCw, BookOpenIcon, StickyNoteIcon } from './icons';
+import { ChevronLeft, BrainCircuit, Network, PlusCircle, LinkIcon, RssIcon, SparkleIcon, DiaryIcon, ExternalLinkIcon, ReplaceIcon, HistoryIcon, MessageSquareQuote, ScaleIcon, FlaskConicalIcon, Edit, LightbulbIcon, Check, RefreshCw, BookOpenIcon, StickyNoteIcon, GraduationCapIcon } from './icons';
 
 interface ProjectDiaryPanelProps {
     isOpen: boolean;
@@ -49,13 +49,41 @@ const ActivityIcon: React.FC<{ type: ProjectActivity['type'] }> = ({ type }) => 
         case 'COMPLETE_BELIEF_CHALLENGE': return <Check className="w-4 h-4 text-green-400" />;
         case 'IMPORT_NOTES': return <BookOpenIcon className="w-4 h-4 text-cyan-400" />;
         case 'ADD_NOTE_TO_MAP': return <StickyNoteIcon className="w-4 h-4 text-yellow-400" />;
+        case 'SOCRATIC_ACTION_TAKEN': return <LightbulbIcon className="w-4 h-4 text-purple-400" />;
+        case 'ANALYZE_RESEARCH_TRENDS': return <GraduationCapIcon className="w-4 h-4 text-blue-400" />;
         default: return <BrainCircuit className="w-4 h-4 text-gray-400" />;
     }
+};
+
+const socraticStyles: Record<string, { name: string, color: string }> = {
+    counterexample: { name: 'Counterexample', color: 'bg-red-500/20 text-red-300' },
+    alternative_hypothesis: { name: 'Alternative Hypothesis', color: 'bg-yellow-500/20 text-yellow-300' },
+};
+
+const socraticActionNames: Record<string, string> = {
+    add_counterexample: 'Add Counterexample',
+    add_alternative_hypothesis: 'Add Alternative',
+    refine_link: 'Refine Link',
+    remove_link: 'Remove Link',
 };
 
 const ActivityText: React.FC<{ activity: ProjectActivity }> = ({ activity }) => {
     const { type, payload } = activity;
     switch (type) {
+        case 'SOCRATIC_ACTION_TAKEN': {
+            const style = socraticStyles[payload.movement] || { name: payload.movement, color: 'bg-gray-500/20 text-gray-300' };
+            const actionName = socraticActionNames[payload.action] || payload.action;
+            return (
+                <>
+                    Socratic Action Taken: <span className="font-bold text-gray-100">{actionName}</span>
+                    <div className="mt-1.5 flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style.color}`}>
+                            {style.name}
+                        </span>
+                    </div>
+                </>
+            );
+        }
         case 'EXPLORE_CONCEPT':
             return <>Explored <span className="font-bold text-gray-100">'{payload.conceptName}'</span> in the Nebula.</>;
         case 'FIND_RELATED':
@@ -103,7 +131,9 @@ const ActivityText: React.FC<{ activity: ProjectActivity }> = ({ activity }) => 
         case 'IMPORT_NOTES':
             return <>Imported {payload.noteCount} notes from <span className="font-bold text-gray-100">'{payload.title}'</span>.</>;
         case 'ADD_NOTE_TO_MAP':
-            return <>Added note as <span className="font-bold text-gray-100">'{payload.synthesizedTitle}'</span> from '{payload.bookTitle}'.</>;
+            return <>Added note as <span className="font-bold text-gray-100">'{payload.synthesizedTitle}'</span> from '{payload.title}'.</>;
+        case 'ANALYZE_RESEARCH_TRENDS':
+            return <>Analyzed research trends for <span className="font-bold text-gray-100">'{payload.conceptName}'</span> using {payload.publicationCount} publications.</>;
         default:
             return <>{type}</>;
     }
@@ -137,9 +167,9 @@ const ProjectDiaryPanel: React.FC<ProjectDiaryPanelProps> = ({ isOpen, onClose, 
                                     <ActivityIcon type={activity.type} />
                                 </div>
                                 <div className="flex-grow">
-                                    <p className="text-sm text-gray-300 leading-snug">
+                                    <div className="text-sm text-gray-300 leading-snug">
                                         <ActivityText activity={activity} />
-                                    </p>
+                                    </div>
                                     <p className="text-xs text-gray-500 mt-1">{timeAgo(activity.timestamp)}</p>
                                     
                                     {activity.payload.provenance && (

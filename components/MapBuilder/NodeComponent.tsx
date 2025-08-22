@@ -1,6 +1,3 @@
-
-
-
 import React from 'react';
 import type { MapNode, ProjectActivityType } from '../../types';
 import { SparkleIcon, StickyNoteIcon, BookOpenIcon } from '../icons';
@@ -42,7 +39,7 @@ const NodeComponent: React.FC<NodeComponentProps> & { getFill: (node: MapNode, s
 }) => {
     const fill = NodeComponent.getFill(node, { linkingNodeId, selectedNodeId: isSelected ? node.id : null, regionSelectedNodeIds: isRegionSelected ? new Set([node.id]) : new Set(), dropTargetNodeId: isDropTarget ? node.id : null });
     const stroke = NodeComponent.getStroke(node, { linkingNodeId, regionSelectedNodeIds: isRegionSelected ? new Set([node.id]) : new Set(), dropTargetNodeId: isDropTarget ? node.id : null });
-    const hasNotes = node.notes && node.notes.trim() !== '' && node.notes.trim() !== '<p><br></p>';
+    const hasUserNotes = node.userNotes && node.userNotes.some(n => n.content.trim() !== '' && n.content.trim() !== '<p><br></p>');
     const hasSourceNotes = node.sourceNotes && node.sourceNotes.length > 0;
 
     return (
@@ -135,19 +132,21 @@ const NodeComponent: React.FC<NodeComponentProps> & { getFill: (node: MapNode, s
                     {node.name}
                 </text>
             )}
-             {hasNotes && !hasSourceNotes && (
-                <foreignObject x={node.width / 2 - 12} y={-node.height / 2 - 12} width="24" height="24" className="overflow-visible pointer-events-none">
-                    <StickyNoteIcon className="w-5 h-5 text-yellow-300 opacity-90" />
-                </foreignObject>
+             {hasUserNotes && (
+                <g>
+                    <title>Has user notes</title>
+                    <foreignObject x={node.width / 2 - 12} y={-node.height / 2 - 12} width="24" height="24" className="overflow-visible pointer-events-none">
+                        <StickyNoteIcon className="w-5 h-5 text-yellow-300 opacity-90" />
+                    </foreignObject>
+                </g>
             )}
             {hasSourceNotes && (
-                <foreignObject x={-node.width / 2 - 4} y={-node.height / 2 - 12} width="24" height="24" className="overflow-visible pointer-events-none">
-                    {node.sourceNotes?.[0].type === 'note' ? (
-                        <StickyNoteIcon className="w-5 h-5 text-cyan-400 opacity-90" />
-                    ) : (
+                <g>
+                    <title>Has source notes</title>
+                    <foreignObject x={-node.width / 2 - 12} y={-node.height / 2 - 12} width="24" height="24" className="overflow-visible pointer-events-none">
                         <BookOpenIcon className="w-5 h-5 text-green-400 opacity-90" />
-                    )}
-                </foreignObject>
+                    </foreignObject>
+                </g>
             )}
             {isAnalyzing && (
                 <foreignObject x={node.width / 2 - 12} y={-node.height / 2 - 12} width="24" height="24" className="overflow-visible">

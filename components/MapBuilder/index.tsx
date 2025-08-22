@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import type { D3Node, Citation, MapLink, MapBuilderProps, FloatingTooltipState, LogicalWorkbenchState, RelationshipTypeInfo, BeliefConfirmationState, KindleNote, DropOnNodeMenuState, SocraticSuggestion, PhilosophicalMove, SocraticActionKey, SocraticMovementKey } from '../../types';
+import type { D3Node, Citation, MapLink, MapBuilderProps, FloatingTooltipState, LogicalWorkbenchState, RelationshipTypeInfo, BeliefConfirmationState, KindleNote, DropOnNodeMenuState, ConfirmationRequestHandler, UserNote } from '../../types';
 
 import { useMapUI } from './hooks/useMapUI';
 import { useMapAI } from './hooks/useMapAI';
@@ -22,10 +22,9 @@ import DefinitionAnalysisPanel from './Panels/DefinitionAnalysisPanel';
 import StudioPanel from './Panels/StudioPanel';
 import BeliefConfirmationPanel from './Panels/BeliefConfirmationPanel';
 import DropOnNodeMenu from './ContextMenus/DropOnNodeMenu';
-import * as socraticService from '../../services/socraticAssistantService';
 
 
-import { X, PlusCircle, ExternalLinkIcon, HelpCircleIcon, InfoIcon, Edit, LightbulbIcon } from '../icons';
+import { X, PlusCircle, ExternalLinkIcon } from '../icons';
 
 const TooltipContent = ({ tooltip, handlePinCitation, setFloatingTooltip }: { 
     tooltip: FloatingTooltipState, 
@@ -130,68 +129,6 @@ const TooltipContent = ({ tooltip, handlePinCitation, setFloatingTooltip }: {
     );
 };
 
-const SocraticSuggestionPanel: React.FC<{
-    suggestion: SocraticSuggestion;
-    movement: PhilosophicalMove;
-    onAction: (suggestion: SocraticSuggestion, action: SocraticActionKey, targetElement?: HTMLElement) => void;
-    onClose: () => void;
-}> = ({ suggestion, movement, onAction, onClose }) => {
-    const [isPedagogyOpen, setIsPedagogyOpen] = useState(false);
-    const refineBtnRef = useRef<HTMLButtonElement>(null);
-
-    const actionConfig: Record<SocraticActionKey, { text: string, icon: React.ReactNode, isPrimary: boolean }> = {
-        add_counterexample: { text: 'Add Counterexample', icon: <PlusCircle className="w-4 h-4 text-green-400" />, isPrimary: true },
-        add_alternative_hypothesis: { text: 'Add Alternative', icon: <LightbulbIcon className="w-4 h-4 text-yellow-400" />, isPrimary: true },
-        refine_link: { text: 'Refine Link', icon: <Edit className="w-4 h-4 text-cyan-400" />, isPrimary: false },
-        remove_link: { text: 'Remove Link', icon: <X className="w-4 h-4 text-red-400" />, isPrimary: false },
-    };
-
-    const getActionsForMovement = (moveKey: SocraticMovementKey): SocraticActionKey[] => {
-        switch (moveKey) {
-            case 'counterexample':
-                return ['add_counterexample', 'refine_link', 'remove_link'];
-            case 'alternative_hypothesis':
-                return ['add_alternative_hypothesis', 'refine_link', 'remove_link'];
-            default:
-                return ['refine_link', 'remove_link'];
-        }
-    }
-
-    const availableActions = getActionsForMovement(suggestion.movementKey);
-
-    return (
-        <div className="bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50 text-white text-sm w-72 animate-fade-in" onClick={e => e.stopPropagation()}>
-            <div className="p-2 space-y-2">
-                <p className="text-gray-300 leading-snug">{movement.suggestionText(suggestion.sourceName, suggestion.targetName)}</p>
-                <div className="relative">
-                    <button onClick={() => setIsPedagogyOpen(p => !p)} className="flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300">
-                        <InfoIcon className="w-4 h-4"/>
-                        <span>Understand this move</span>
-                    </button>
-                    {isPedagogyOpen && (
-                        <div className="absolute bottom-full left-0 mb-2 bg-gray-900 p-3 rounded-md border border-gray-700 shadow-xl w-full">
-                            <h5 className="font-bold text-purple-300">{movement.pedagogy.title}</h5>
-                            <p className="text-xs text-gray-400 mt-1">{movement.pedagogy.explanation}</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-            <div className="border-t border-gray-700 my-1"></div>
-            {availableActions.map(actionKey => (
-                 <button 
-                    key={actionKey}
-                    ref={actionKey === 'refine_link' ? refineBtnRef : null}
-                    onClick={() => onAction(suggestion, actionKey, refineBtnRef.current || undefined)} 
-                    className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2"
-                >
-                    {actionConfig[actionKey].icon} {actionConfig[actionKey].text}
-                </button>
-            ))}
-        </div>
-    );
-}
-
-
 const MapBuilder: React.FC<MapBuilderProps> = ({ 
     layout, 
     setLayout, 
@@ -208,6 +145,9 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
     onAddMultipleNotesToMap,
     onAttachSourceNote,
     onAppendToNodeNotes,
+    onRequestConfirmation,
+    notesToPlace,
+    onClearNotesToPlace,
 }) => {
     const { nodes, links } = layout;
     const ai = useMemo(() => new GoogleGenAI({ apiKey: process.env.API_KEY! }), []);
@@ -217,7 +157,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
     const [isExportingJson, setIsExportingJson] = useState(false);
     const [beliefConfirmationState, setBeliefConfirmationState] = useState<BeliefConfirmationState | null>(null);
     const [dropOnNodeMenu, setDropOnNodeMenu] = useState<DropOnNodeMenuState | null>(null);
-    const [activeSocraticSuggestion, setActiveSocraticSuggestion] = useState<SocraticSuggestion | null>(null);
 
     const relationshipColorMap = useMemo(() => {
         return relationshipTypes.reduce((acc, item) => {
@@ -226,7 +165,7 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
         }, {} as Record<string, string>);
     }, [relationshipTypes]);
 
-    const ui = useMapUI({ allNodes, layout, setLayout, logActivity, nodeMap });
+    const ui = useMapUI({ allNodes, layout, setLayout, logActivity, nodeMap, onRequestConfirmation });
     
     const aiHooks = useMapAI({
         ai,
@@ -257,7 +196,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
     const { ref: editLinkTypesMenuRef, style: editLinkTypesMenuStyle } = useFloatingPosition(ui.editLinkTypesMenu, { strategy: 'flip' });
     const { ref: floatingTooltipRef, style: floatingTooltipStyle } = useFloatingPosition(ui.floatingTooltip, { offsetX: 15, offsetY: 10 });
     const { ref: beliefConfirmationRef, style: beliefConfirmationStyle } = useFloatingPosition(beliefConfirmationState, { centered: true });
-    const { ref: socraticSuggestionRef, style: socraticSuggestionStyle } = useFloatingPosition(activeSocraticSuggestion ? activeSocraticSuggestion.position : null, { centered: true });
 
     const handleImageExport = useCallback(async (format: 'png' | 'jpeg') => {
         if (nodes.length === 0) {
@@ -343,6 +281,19 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
         beliefChallenge.startChallenge(belief, confidence, sourceNodeIds);
     }, [beliefChallenge, setIsChallengeOpen, beliefConfirmationState]);
 
+    const handleUpdateUserNotes = useCallback((nodeId: string | number, userNotes: UserNote[]) => {
+        setLayout(prev => ({
+            ...prev,
+            nodes: prev.nodes.map(n => {
+                if (n.id === nodeId) {
+                    const { notes, ...rest } = n as any; 
+                    return { ...rest, userNotes };
+                }
+                return n;
+            })
+        }));
+    }, [setLayout]);
+
     return (
         <div className="w-full h-full relative">
             <MapCanvas
@@ -358,10 +309,9 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
                 onAddMultipleNotesToMap={onAddMultipleNotesToMap}
                 setDropOnNodeMenu={setDropOnNodeMenu}
                 socraticSuggestions={aiHooks.socraticSuggestions}
-                onSuggestionClick={(suggestion) => {
-                    ui.clearSelections();
-                    setActiveSocraticSuggestion(suggestion);
-                }}
+                onSuggestionClick={(suggestion) => aiHooks.handleSocraticAction(suggestion, suggestion.availableActions[0])}
+                notesToPlace={notesToPlace}
+                onClearNotesToPlace={onClearNotesToPlace}
             />
 
             <MapToolbar
@@ -377,8 +327,8 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
             
             {ui.nodeContextMenu && <div ref={nodeContextMenuRef} style={nodeContextMenuStyle}><NodeContextMenu nodeContextMenu={ui.nodeContextMenu} node={nodeMap.get(ui.nodeContextMenu.nodeId)} isAnalyzingGenealogy={aiHooks.isAnalyzingGenealogy === ui.nodeContextMenu.nodeId} setLinkingNode={ui.setLinkingNode} setNodeContextMenu={ui.setNodeContextMenu} handleAnalyzeGenealogy={aiHooks.handleAnalyzeGenealogy} setChangingNodeState={ui.setChangingNodeState} setColorPicker={ui.setColorPicker} updateNodeShape={ui.updateNodeShape} deleteNode={ui.deleteNode} onEditNote={(nodeId) => ui.setStudioState({ nodeId, x: ui.nodeContextMenu!.x, y: ui.nodeContextMenu!.y })} /></div>}
             {ui.colorPicker && <div ref={colorPickerRef} style={colorPickerStyle}><ColorPicker colorPicker={ui.colorPicker} textColors={ui.textColors} handleTextColorChange={ui.handleTextColorChange} /></div>}
-            {ui.linkContextMenu && <div ref={linkContextMenuRef} style={linkContextMenuStyle}><LinkContextMenu linkContextMenu={ui.linkContextMenu} setLogicalWorkbench={ui.setLogicalWorkbench} handleFormalizeArgument={(state) => aiHooks.handleFormalizeArgument(state)} setLinkContextMenu={ui.setLinkContextMenu} setDialecticAnalysis={ui.setDialecticAnalysis} handleAnalyzeArgument={aiHooks.handleAnalyzeArgument} handleExploreImplications={aiHooks.handleExploreImplications} generateJustification={aiHooks.generateJustification} setEditLinkTypesMenu={ui.setEditLinkTypesMenu} updateLinkPathStyle={ui.updateLinkPathStyle} deleteLink={ui.deleteLink} handleAnalyzeDefinition={aiHooks.handleAnalyzeDefinition} onChallengeBelief={(link, x, y) => setBeliefConfirmationState({ link, x, y })} /></div>}
-            {dropOnNodeMenu && <div ref={dropOnNodeMenuRef} style={dropOnNodeMenuStyle}><DropOnNodeMenu menuState={dropOnNodeMenu} onAttach={onAttachSourceNote} onAppend={onAppendToNodeNotes} onClose={() => setDropOnNodeMenu(null)} /></div>}
+            {ui.linkContextMenu && <div ref={linkContextMenuRef} style={linkContextMenuStyle}><LinkContextMenu linkContextMenu={ui.linkContextMenu} setLogicalWorkbench={ui.setLogicalWorkbench} handleFormalizeArgument={(state) => aiHooks.handleFormalizeArgument(state)} setLinkContextMenu={ui.setLinkContextMenu} setDialecticAnalysis={ui.setDialecticAnalysis} handleAnalyzeArgument={aiHooks.handleAnalyzeArgument} handleExploreImplications={aiHooks.handleExploreImplications} generateJustification={aiHooks.generateJustification} setEditLinkTypesMenu={ui.setEditLinkTypesMenu} updateLinkPathStyle={ui.updateLinkPathStyle} flipLinkCurve={ui.flipLinkCurve} deleteLink={ui.deleteLink} handleAnalyzeDefinition={aiHooks.handleAnalyzeDefinition} onChallengeBelief={(link, x, y) => setBeliefConfirmationState({ link, x, y })} handleGenerateCounterExample={aiHooks.handleGenerateCounterExample} handleGenerateAlternativeHypothesis={aiHooks.handleGenerateAlternativeHypothesis} /></div>}
+            {dropOnNodeMenu && <div ref={dropOnNodeMenuRef} style={dropOnNodeMenuStyle}><DropOnNodeMenu menuState={dropOnNodeMenu} onAttach={onAttachSourceNote} onAppend={onAppendToNodeNotes} onClose={() => setDropOnNodeMenu(null)} onClearNotesToPlace={onClearNotesToPlace} /></div>}
             {ui.editLinkTypesMenu && (
                 <div ref={editLinkTypesMenuRef} style={editLinkTypesMenuStyle} className="fixed bg-gray-800 border border-gray-600 rounded-md shadow-lg p-2 z-50 text-white text-sm w-64" onClick={e => e.stopPropagation()}>
                     <div className="flex justify-between items-center mb-2">
@@ -461,27 +411,14 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
                     analysisMode={false}
                     state={ui.studioState}
                     nodeName={nodeMap.get(ui.studioState.nodeId)?.name || ''}
-                    initialNotes={nodeMap.get(ui.studioState.nodeId)?.notes || ''}
+                    initialUserNotes={nodeMap.get(ui.studioState.nodeId)?.userNotes || []}
                     sourceNotes={nodeMap.get(ui.studioState.nodeId)?.sourceNotes}
                     onClose={() => ui.setStudioState(null)}
-                    onUpdateContent={ui.handleUpdateNoteContent}
+                    onUpdateUserNotes={handleUpdateUserNotes}
                     onLogEdit={ui.handleLogNoteEdit}
                     logActivity={logActivity}
                     ai={ai}
                 />
-            )}
-            {activeSocraticSuggestion && (
-                <div ref={socraticSuggestionRef} style={socraticSuggestionStyle} className="fixed z-50">
-                     <SocraticSuggestionPanel
-                        suggestion={activeSocraticSuggestion}
-                        movement={socraticService.getMovement(activeSocraticSuggestion.movementKey)}
-                        onAction={(suggestion, action, el) => {
-                            aiHooks.handleSocraticAction(suggestion, action, el);
-                            setActiveSocraticSuggestion(null);
-                        }}
-                        onClose={() => setActiveSocraticSuggestion(null)}
-                    />
-                </div>
             )}
         </div>
     );

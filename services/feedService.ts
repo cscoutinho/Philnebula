@@ -1,7 +1,9 @@
 
-import { Publication } from '../types';
 
-export const parseFeedXml = (xmlText: string, sourceUrl: string, nodeName: string): Publication[] => {
+import { Publication, ResearchAnalysisData } from '../types';
+import { GoogleGenAI, Type } from '@google/genai';
+
+export const parseFeedXml = (xmlText: string, sourceUrl: string, nodeName: string, limit: number = 5): Publication[] => {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlText, "application/xml");
 
@@ -18,7 +20,7 @@ export const parseFeedXml = (xmlText: string, sourceUrl: string, nodeName: strin
     if (items.length === 0) {
         items = Array.from(xmlDoc.querySelectorAll("entry"));
     }
-    items = items.slice(0, 5);
+    items = items.slice(0, limit);
 
     const publications: Publication[] = items.map(item => {
         const rawTitle = item.querySelector("title")?.textContent || 'No Title';
@@ -88,4 +90,100 @@ export const fetchSingleFeed = async (url: string, nodeName: string): Promise<{ 
 
     const publications = parseFeedXml(xmlText, url, nodeName);
     return { publications };
+};
+
+export const fetchFullFeed = async (url: string, nodeName: string, limit: number = 50): Promise<{ publications: Publication[] }> => {
+    try {
+        new URL(url);
+    } catch (_) {
+        throw new Error("The provided URL is not valid.");
+    }
+
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    let response;
+    try {
+        response = await fetch(proxyUrl);
+    } catch (error) {
+        console.error("Network error during fetch:", error);
+        throw new Error("Network request failed. This could be due to a connection issue, or the CORS proxy might be down.");
+    }
+    if (!response.ok) {
+        throw new Error(`The request failed with status: ${response.status}. The URL may be incorrect or the server is down.`);
+    }
+    const xmlText = await response.text();
+    if (!xmlText.trim()) {
+        throw new Error("Received an empty response.");
+    }
+    const publications = parseFeedXml(xmlText, url, nodeName, limit);
+    return { publications };
+};
+
+export const analyzeResearchTrends = async (
+    ai: GoogleGenAI,
+    nodeName: string,
+    publications: { title: string, author: string | null }[]
+): Promise<{ data: ResearchAnalysisData, provenance: any }> => {
+    const model = 'gemini-2.5-flash';
+    const systemInstruction = "You are a senior academic philosopher, an expert in analyzing research trends. Your task is to analyze a list of recent publications from a specific field and provide a concise, insightful overview of the current state of research, based solely on the provided titles and authors.";
+    const prompt = `Based on the following list of 50 recent publications in the category of '${nodeName}', generate an analysis that includes:
+- General Summary: A paragraph synthesizing the overall research focus.
+- Key Themes: Identify 3-5 recurring themes. For each theme, provide a brief description and list 2-3 representative publication titles.
+- Potential Debates: If the titles suggest any debates, describe the tension.
+- Notable Authors: List any authors appearing more than once.
+- Future Questions: Suggest 2-3 future research questions.
+
+Publication List:
+${JSON.stringify(publications)}
+
+Your response MUST be a single JSON object, strictly following this schema:`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+                systemInstruction,
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        generalSummary: { type: Type.STRING },
+                        keyThemes: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    theme: { type: Type.STRING },
+                                    description: { type: Type.STRING },
+                                    representativeTitles: { type: Type.ARRAY, items: { type: Type.STRING } }
+                                },
+                                required: ["theme", "description", "representativeTitles"]
+                            }
+                        },
+                        potentialDebates: { type: Type.STRING },
+                        notableAuthors: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        futureQuestions: { type: Type.ARRAY, items: { type: Type.STRING } }
+                    },
+                    required: ["generalSummary", "keyThemes", "potentialDebates", "notableAuthors", "futureQuestions"]
+                }
+            }
+        });
+
+        const data = JSON.parse(response.text);
+        const { usageMetadata } = response;
+        const provenance = {
+            prompt: `... [prompt with ${publications.length} publications for ${nodeName}]`,
+            systemInstruction,
+            rawResponse: response.text,
+            model,
+            inputTokens: usageMetadata?.promptTokenCount,
+            outputTokens: usageMetadata?.candidatesTokenCount,
+            totalTokens: (usageMetadata?.promptTokenCount || 0) + (usageMetadata?.candidatesTokenCount || 0),
+        };
+
+        return { data, provenance };
+    } catch (error) {
+        console.error("Error analyzing research trends:", error);
+        throw error;
+    }
 };

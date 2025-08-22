@@ -56,6 +56,7 @@ export const useMapAI = ({ ai, layout, setLayout, logActivity, nodeMap, clearSel
                             movement: suggestion.movementKey,
                             source: suggestion.sourceName,
                             target: suggestion.targetName,
+                            relationshipTypes: link.relationshipTypes,
                         });
                     }
                 }
@@ -115,10 +116,16 @@ export const useMapAI = ({ ai, layout, setLayout, logActivity, nodeMap, clearSel
                     setLayout(prev => ({ ...prev, nodes: [...prev.nodes, tempNode] }));
 
                     try {
+                         const existingCounterExamples = links
+                            .filter(l => l.target === originalLink.source && l.relationshipTypes.includes('Apresenta um Contraexemplo para'))
+                            .map(l => nodeMap.get(l.source)?.name)
+                            .filter((name): name is string => !!name);
+
                         const { name: counterExampleName, justification, provenance } = await socraticService.generateCounterExample(
                             ai,
                             suggestion.sourceName,
-                            suggestion.targetName
+                            suggestion.targetName,
+                            existingCounterExamples
                         );
                         
                         logActivity('SOCRATIC_ACTION_TAKEN', {
@@ -158,6 +165,53 @@ export const useMapAI = ({ ai, layout, setLayout, logActivity, nodeMap, clearSel
                         console.error("Failed to generate counterexample:", error);
                         setLayout(prev => ({ ...prev, nodes: prev.nodes.filter(n => n.id !== tempId) }));
                         alert("The AI could not generate a counterexample. Please try again.");
+                    }
+                }
+                break;
+            case 'add_alternative_hypothesis':
+                 if (originalLink) {
+                    const tempId = `temp_alt_${Date.now()}`;
+                    const sourceNode = nodeMap.get(originalLink.source);
+                    const targetNode = nodeMap.get(originalLink.target);
+                    if (!sourceNode || !targetNode) return;
+
+                    const tempNode: MapNode = {
+                        id: tempId, name: 'Generating...',
+                        x: sourceNode.x + 80, y: sourceNode.y + 80,
+                        shape: 'rect', width: 160, height: 40,
+                        isAiGenerated: true, isDialectic: true
+                    };
+                    setLayout(prev => ({ ...prev, nodes: [...prev.nodes, tempNode] }));
+
+                    try {
+                        const existingAlternatives = links
+                            .filter(l => l.target === originalLink.target && l.source !== originalLink.source && l.relationshipTypes.includes('É a Melhor Explicação para'))
+                            .map(l => nodeMap.get(l.source)?.name)
+                            .filter((name): name is string => !!name);
+
+                        const { name, justification, provenance } = await socraticService.generateAlternativeHypothesis(ai, suggestion.sourceName, suggestion.targetName, existingAlternatives);
+
+                        logActivity('SOCRATIC_ACTION_TAKEN', {
+                            movement: suggestion.movementKey, action,
+                            source: suggestion.sourceName, target: suggestion.targetName,
+                            generatedAlternative: name, justification, provenance
+                        });
+
+                        const finalId = `alt_${Date.now()}`;
+                        const finalNode: MapNode = { ...tempNode, id: finalId, name, synthesisInfo: { synthesis: justification, reasoning: "AI-generated alternative hypothesis." } };
+                        const newLink: MapLink = {
+                            source: finalId, target: originalLink.target, pathStyle: 'curved',
+                            relationshipTypes: ['É a Melhor Explicação para']
+                        };
+                        setLayout(prev => ({
+                            ...prev,
+                            nodes: prev.nodes.map(n => n.id === tempId ? finalNode : n),
+                            links: [...prev.links, newLink]
+                        }));
+                    } catch (error) {
+                        console.error("Failed to generate alternative hypothesis:", error);
+                        setLayout(prev => ({ ...prev, nodes: prev.nodes.filter(n => n.id !== tempId) }));
+                        alert("The AI could not generate an alternative hypothesis. Please try again.");
                     }
                 }
                 break;
@@ -969,6 +1023,95 @@ Respond with a JSON object containing 'justificationText' and 'citations'.`;
         }));
     }, [definitionAnalysisState, nodeMap, setLayout]);
 
+    const handleGenerateCounterExample = useCallback(async (link: MapLink) => {
+        const sourceNode = nodeMap.get(link.source);
+        const targetNode = nodeMap.get(link.target);
+        if (!sourceNode || !targetNode) return;
+
+        const tempId = `temp_counter_${Date.now()}`;
+        const tempNode: MapNode = {
+            id: tempId, name: 'Generating...',
+            x: (targetNode.x + sourceNode.x) / 2 + 50,
+            y: (targetNode.y + sourceNode.y) / 2 + 80,
+            shape: 'rect', width: 160, height: 40,
+            isCounterExample: true, isAiGenerated: true,
+        };
+        setLayout(prev => ({ ...prev, nodes: [...prev.nodes, tempNode] }));
+
+        try {
+            const existingCounterExamples = links
+                .filter(l => l.target === link.source && l.relationshipTypes.includes('Apresenta um Contraexemplo para'))
+                .map(l => nodeMap.get(l.source)?.name)
+                .filter((name): name is string => !!name);
+
+            const { name: counterExampleName, justification, provenance } = await socraticService.generateCounterExample(ai, sourceNode.name, targetNode.name, existingCounterExamples);
+            
+            logActivity('SOCRATIC_ACTION_TAKEN', {
+                movement: 'counterexample', action: 'add_counterexample', source: 'context_menu',
+                sourceName: sourceNode.name, targetName: targetNode.name,
+                generatedCounterexample: counterExampleName, justification, provenance,
+            });
+
+            const finalId = `counter_${Date.now()}`;
+            const finalNode: MapNode = {
+                ...tempNode, id: finalId, name: counterExampleName,
+                synthesisInfo: { synthesis: justification, reasoning: "AI-generated counterexample." }
+            };
+            const newLink: MapLink = {
+                source: finalId, target: link.source, pathStyle: 'curved',
+                relationshipTypes: ['Apresenta um Contraexemplo para'], isCounterExampleLink: true,
+            };
+            setLayout(prev => ({ ...prev, nodes: prev.nodes.map(n => n.id === tempId ? finalNode : n), links: [...prev.links, newLink] }));
+        } catch (error) {
+            console.error("Failed to generate counterexample:", error);
+            setLayout(prev => ({ ...prev, nodes: prev.nodes.filter(n => n.id !== tempId) }));
+            alert("The AI could not generate a counterexample. Please try again.");
+        }
+    }, [ai, nodeMap, setLayout, logActivity, links]);
+
+    const handleGenerateAlternativeHypothesis = useCallback(async (link: MapLink) => {
+        const sourceNode = nodeMap.get(link.source);
+        const targetNode = nodeMap.get(link.target);
+        if (!sourceNode || !targetNode) return;
+
+        const tempId = `temp_alt_${Date.now()}`;
+        const tempNode: MapNode = {
+            id: tempId, name: 'Generating...',
+            x: sourceNode.x + 80, y: sourceNode.y + 80,
+            shape: 'rect', width: 160, height: 40,
+            isAiGenerated: true, isDialectic: true
+        };
+        setLayout(prev => ({ ...prev, nodes: [...prev.nodes, tempNode] }));
+
+        try {
+            const existingAlternatives = links
+                .filter(l => l.target === link.target && l.source !== link.source && l.relationshipTypes.includes('É a Melhor Explicação para'))
+                .map(l => nodeMap.get(l.source)?.name)
+                .filter((name): name is string => !!name);
+
+            const { name, justification, provenance } = await socraticService.generateAlternativeHypothesis(ai, sourceNode.name, targetNode.name, existingAlternatives);
+
+            logActivity('SOCRATIC_ACTION_TAKEN', {
+                movement: 'alternative_hypothesis', action: 'add_alternative_hypothesis', source: 'context_menu',
+                sourceName: sourceNode.name, targetName: targetNode.name,
+                generatedAlternative: name, justification, provenance
+            });
+
+            const finalId = `alt_${Date.now()}`;
+            const finalNode: MapNode = { ...tempNode, id: finalId, name, synthesisInfo: { synthesis: justification, reasoning: "AI-generated alternative hypothesis." } };
+            const newLink: MapLink = {
+                source: finalId, target: link.target, pathStyle: 'curved',
+                relationshipTypes: ['É a Melhor Explicação para']
+            };
+            setLayout(prev => ({ ...prev, nodes: prev.nodes.map(n => n.id === tempId ? finalNode : n), links: [...prev.links, newLink] }));
+        } catch (error) {
+            console.error("Failed to generate alternative hypothesis:", error);
+            setLayout(prev => ({ ...prev, nodes: prev.nodes.filter(n => n.id !== tempId) }));
+            alert("The AI could not generate an alternative hypothesis. Please try again.");
+        }
+    }, [ai, nodeMap, setLayout, logActivity, links]);
+
+
     return {
         isSynthesizing,
         isAnalyzingGenealogy,
@@ -992,5 +1135,7 @@ Respond with a JSON object containing 'justificationText' and 'citations'.`;
         handleAnalyzeDefinition,
         handleHuntForCounterExamples,
         handleAddCounterExampleNode,
+        handleGenerateCounterExample,
+        handleGenerateAlternativeHypothesis,
     };
 };

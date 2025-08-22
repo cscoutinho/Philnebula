@@ -4,6 +4,21 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export interface RawNode {
   id: number;
   name: string;
@@ -58,6 +73,15 @@ export interface KindleNote {
   page: number | null;
   type: 'highlight' | 'note';
   sourceId: string;
+  section?: string;
+}
+
+export interface UserNote {
+  id: string;
+  title: string;
+  content: string; // HTML content from the rich-text editor
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface MapNode {
@@ -80,7 +104,7 @@ export interface MapNode {
   textColor?: string;
   isCitation?: boolean;
   citationData?: Citation;
-  notes?: string;
+  userNotes?: UserNote[];
   sourceNotes?: KindleNote[];
 }
 
@@ -88,6 +112,7 @@ export interface MapLink {
   source: number | string; // ID of source MapNode
   target: number | string; // ID of target MapNode
   pathStyle: 'straight' | 'curved';
+  curveDirection?: number; // 1 for right, -1 for left
   relationshipTypes: RelationshipType[];
   relationshipType?: RelationshipType; // For migration from old format
   justification?: string | { text: string; citations: Citation[] }; // Updated to support structured justifications
@@ -144,6 +169,21 @@ export interface Publication {
     isNew?: boolean;
 }
 
+// --- Types for Research Analysis ---
+export interface KeyTheme {
+    theme: string;
+    description: string;
+    representativeTitles: string[];
+}
+  
+export interface ResearchAnalysisData {
+    generalSummary: string;
+    keyThemes: KeyTheme[];
+    potentialDebates: string;
+    notableAuthors: string[];
+    futureQuestions: string[];
+}
+
 // --- Types for Project Diary ---
 export type ProjectActivityType =
   | 'EXPLORE_CONCEPT'
@@ -170,8 +210,9 @@ export type ProjectActivityType =
   | 'INITIATE_BELIEF_CHALLENGE_FROM_MAP'
   | 'IMPORT_NOTES'
   | 'ADD_NOTE_TO_MAP'
+  | 'SOCRATIC_ACTION_TAKEN'
   | 'SOCRATIC_SUGGESTION_TRIGGERED'
-  | 'SOCRATIC_ACTION_TAKEN';
+  | 'ANALYZE_RESEARCH_TRENDS';
 
 export interface ProjectActivity {
   id: string;
@@ -257,19 +298,33 @@ export interface ImportedNoteSource {
 }
 
 // --- Type for Data Portability ---
+
+export interface ConceptualMap {
+  id: string;
+  name: string;
+  layout: { 
+    nodes: MapNode[], 
+    links: MapLink[],
+    logicalConstructs: LogicalConstruct[],
+  };
+}
+
 export interface AppSessionData {
-    trackedFeeds: TrackedFeed[];
-    mapLayout: { 
-        nodes: MapNode[], 
-        links: MapLink[],
-        logicalConstructs: LogicalConstruct[],
-    };
+    maps: ConceptualMap[];
+    activeMapId: string | null;
     mapTrayConceptIds: number[];
+    trackedFeeds: TrackedFeed[];
     seenPublicationIds: string[];
     projectDiary: ProjectActivity[];
     beliefFlipChallenges: ChallengeSession[];
     importedNoteSources?: ImportedNoteSource[];
     processedNoteIds?: string[];
+    // DEPRECATED, will be migrated
+    mapLayout?: { 
+        nodes: MapNode[], 
+        links: MapLink[],
+        logicalConstructs: LogicalConstruct[],
+    };
     // Deprecated, use importedNoteSources instead
     importedNotes?: {
         title: string; // formerly bookTitle
@@ -335,7 +390,7 @@ export interface RelationshipTypeInfo {
 
 export interface MapBuilderProps {
     layout: { nodes: MapNode[], links: MapLink[], logicalConstructs: LogicalConstruct[] };
-    setLayout: React.Dispatch<React.SetStateAction<{ nodes: MapNode[], links: MapLink[], logicalConstructs: LogicalConstruct[] }>>;
+    setLayout: (updater: React.SetStateAction<{ nodes: MapNode[], links: MapLink[], logicalConstructs: LogicalConstruct[] }> | ((current: { nodes: MapNode[]; links: MapLink[]; logicalConstructs: LogicalConstruct[]; }) => { nodes: MapNode[]; links: MapLink[]; logicalConstructs: LogicalConstruct[]; })) => void;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
     relationshipTypes: RelationshipTypeInfo[];
     onExportMapData: () => Promise<{ success: boolean; message: string }>;
@@ -349,6 +404,9 @@ export interface MapBuilderProps {
     onAddMultipleNotesToMap: (notes: KindleNote[], position: { x: number, y: number }) => void;
     onAttachSourceNote: (nodeId: string | number, notes: KindleNote[]) => void;
     onAppendToNodeNotes: (nodeId: string | number, notes: KindleNote[]) => void;
+    onRequestConfirmation: ConfirmationRequestHandler;
+    notesToPlace: KindleNote[] | null;
+    onClearNotesToPlace: () => void;
 }
 
 export interface NodeContextMenuState {
@@ -445,56 +503,28 @@ export interface BeliefConfirmationState {
 }
 
 // --- Types for Socratic Assistant ---
-
-// The rich context object for a user action
-export interface NodeContext {
-  id: number | string;
-  name: string;
-  type: 'taxonomy' | 'user_defined' | 'note_synthesis' | 'citation' | 'ai_synthesis' | 'historical' | 'dialectic' | 'counterexample';
-  taxonomyPath: string[] | null;
-}
-
-export interface LinkContext {
-  relationshipTypes: string[];
-  justification: string | { text: string; citations: Citation[] } | null;
-}
-
-export interface ActionContext {
-  event: 'link_created';
-  sourceNode: NodeContext;
-  targetNode: NodeContext;
-  link: LinkContext;
-}
+export type SocraticActionKey = 'add_counterexample' | 'add_alternative_hypothesis' | 'refine_link' | 'remove_link';
 
 export type SocraticMovementKey = 'counterexample' | 'alternative_hypothesis';
 
-export interface PhilosophicalMove {
-    key: SocraticMovementKey;
-    suggestionText: (sourceName: string, targetName: string) => string;
-    pedagogy: {
-        title: string;
-        explanation: string;
-    };
-}
-
 export interface SocraticSuggestion {
     id: string;
-    triggerType: 'link';
-    triggerId: string;
     movementKey: SocraticMovementKey;
-    position: { x: number; y: number };
-    // context for handlers
-    sourceId: string | number;
-    targetId: string | number;
+    triggerType: 'link';
+    triggerId: string; // e.g., `${sourceId}-${targetId}`
     sourceName: string;
     targetName: string;
+    position: { x: number; y: number };
+    availableActions: SocraticActionKey[];
+    description: string;
 }
 
-export type SocraticActionKey = 'add_counterexample' | 'add_alternative_hypothesis' | 'refine_link' | 'remove_link';
-
-export interface WorkerOperation {
-    op: 'add_suggestion';
-    payload: SocraticSuggestion;
+export interface PhilosophicalMove {
+    key: SocraticMovementKey;
+    name: string;
+    description: string;
+    condition: (link: MapLink) => boolean;
+    getSuggestion: (link: MapLink, sourceNode: MapNode, targetNode: MapNode, position: {x: number, y: number}) => SocraticSuggestion;
 }
 
 // --- END OF MAP BUILDER TYPES ---

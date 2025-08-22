@@ -1,6 +1,6 @@
 import React from 'react';
 import type { MapLink, LogicalWorkbenchState } from '../../../types';
-import { FlaskConicalIcon, ScaleIcon, MessageSquareQuote, SparkleIcon, Trash2, BookOpenIcon, LightbulbIcon } from '../../icons';
+import { FlaskConicalIcon, ScaleIcon, MessageSquareQuote, SparkleIcon, Trash2, BookOpenIcon, LightbulbIcon, FlipIcon } from '../../icons';
 
 interface LinkContextMenuProps {
     linkContextMenu: { x: number; y: number; link: MapLink; };
@@ -13,9 +13,12 @@ interface LinkContextMenuProps {
     generateJustification: (link: MapLink) => void;
     setEditLinkTypesMenu: (state: { anchorEl: HTMLElement, link: MapLink }) => void;
     updateLinkPathStyle: (link: MapLink, pathStyle: 'straight' | 'curved') => void;
+    flipLinkCurve: (link: MapLink) => void;
     deleteLink: (link: MapLink) => void;
     handleAnalyzeDefinition: (link: MapLink, x: number, y: number) => void;
     onChallengeBelief: (link: MapLink, x: number, y: number) => void;
+    handleGenerateCounterExample: (link: MapLink) => void;
+    handleGenerateAlternativeHypothesis: (link: MapLink) => void;
 }
 
 const challengeableTypes = new Set([
@@ -37,6 +40,9 @@ const analyzableTypes = new Set([
     'É Condição Suficiente para'
 ]);
 
+const counterExampleTypes = new Set(['É Condição Suficiente para']);
+const alternativeHypothesisTypes = new Set(['É a Melhor Explicação para']);
+
 
 const LinkContextMenu: React.FC<LinkContextMenuProps> = ({
     linkContextMenu,
@@ -49,23 +55,37 @@ const LinkContextMenu: React.FC<LinkContextMenuProps> = ({
     generateJustification,
     setEditLinkTypesMenu,
     updateLinkPathStyle,
+    flipLinkCurve,
     deleteLink,
     handleAnalyzeDefinition,
-    onChallengeBelief
+    onChallengeBelief,
+    handleGenerateCounterExample,
+    handleGenerateAlternativeHypothesis,
 }) => {
     const isAnalyzable = linkContextMenu.link.relationshipTypes.some(type => analyzableTypes.has(type));
     const isChallengeable = linkContextMenu.link.relationshipTypes.some(type => challengeableTypes.has(type));
+    const isCounterExampleEligible = linkContextMenu.link.relationshipTypes.some(type => counterExampleTypes.has(type));
+    const isAlternativeHypothesisEligible = linkContextMenu.link.relationshipTypes.some(type => alternativeHypothesisTypes.has(type));
 
     return (
         <div className="fixed bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50 text-white text-sm animate-fade-in" onClick={e => e.stopPropagation()}>
             {isChallengeable && (
-                <>
-                    <button onClick={() => { onChallengeBelief(linkContextMenu.link, linkContextMenu.x, linkContextMenu.y); setLinkContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2">
-                        <LightbulbIcon className="w-4 h-4 text-yellow-400"/>Challenge Belief
-                    </button>
-                    <div className="my-1 border-t border-gray-700"></div>
-                </>
+                <button onClick={() => { onChallengeBelief(linkContextMenu.link, linkContextMenu.x, linkContextMenu.y); setLinkContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2">
+                    <LightbulbIcon className="w-4 h-4 text-yellow-400"/>Challenge Belief
+                </button>
             )}
+            {isCounterExampleEligible && (
+                 <button onClick={() => { handleGenerateCounterExample(linkContextMenu.link); setLinkContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2">
+                    <LightbulbIcon className="w-4 h-4 text-red-400"/>Generate Counterexample
+                </button>
+            )}
+             {isAlternativeHypothesisEligible && (
+                <button onClick={() => { handleGenerateAlternativeHypothesis(linkContextMenu.link); setLinkContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2">
+                    <LightbulbIcon className="w-4 h-4 text-yellow-400"/>Generate Alternative Hypothesis
+                </button>
+            )}
+            {(isChallengeable || isAnalyzable || isCounterExampleEligible || isAlternativeHypothesisEligible) && <div className="my-1 border-t border-gray-700"></div>}
+            
             {isAnalyzable && (
                 <>
                     <button onClick={() => { handleAnalyzeDefinition(linkContextMenu.link, linkContextMenu.x, linkContextMenu.y); setLinkContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2">
@@ -88,7 +108,15 @@ const LinkContextMenu: React.FC<LinkContextMenuProps> = ({
             </button>
             <div className="my-1 border-t border-gray-700"></div>
             <button onClick={(e) => { setEditLinkTypesMenu({ anchorEl: e.currentTarget, link: linkContextMenu.link }); setLinkContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded">Edit Types</button>
-            <button onClick={() => updateLinkPathStyle(linkContextMenu.link, linkContextMenu.link.pathStyle === 'straight' ? 'curved' : 'straight')} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded">Toggle Path</button>
+            <button onClick={() => updateLinkPathStyle(linkContextMenu.link, linkContextMenu.link.pathStyle === 'straight' ? 'curved' : 'straight')} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded">
+                {linkContextMenu.link.pathStyle === 'curved' ? 'Use Straight Path' : 'Use Curved Path'}
+            </button>
+            {linkContextMenu.link.pathStyle === 'curved' && (
+                <button onClick={() => flipLinkCurve(linkContextMenu.link)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2">
+                    <FlipIcon className="w-4 h-4"/>
+                    Flip Curve
+                </button>
+            )}
             <div className="my-1 border-t border-gray-700"></div>
             <button onClick={() => deleteLink(linkContextMenu.link)} className="block w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-500/20 rounded flex items-center gap-2"><Trash2 className="w-4 h-4"/>Delete Link</button>
         </div>

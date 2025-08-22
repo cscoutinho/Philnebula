@@ -50,7 +50,8 @@ export const calculateLinkPath = (link: MapLink, nodeMap: Map<string | number, M
     if (link.pathStyle === 'curved') {
         const dx = x2 - x1;
         const dy = y2 - y1;
-        const curveFactor = 0.25;
+        const curveDirection = link.curveDirection || 1;
+        const curveFactor = 0.25 * curveDirection;
         const cx = (x1 + x2) / 2 - dy * curveFactor;
         const cy = (y1 + y2) / 2 + dx * curveFactor;
         return `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`;

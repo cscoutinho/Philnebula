@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { MultiProjectSession, Project, AppSessionData, MapLink, ProjectActivityType, ProjectActivity, ImportedNoteSource } from '../types';
+import { MultiProjectSession, Project, AppSessionData, MapLink, ProjectActivityType, ProjectActivity, ImportedNoteSource, ConceptualMap, UserNote } from '../types';
 
-const MULTI_PROJECT_SESSION_VERSION = 11;
+const MULTI_PROJECT_SESSION_VERSION = 13;
 
 const createNewProject = (name: string): Project => {
+    const defaultMapId = `map_${Date.now()}`;
     return {
         id: `proj_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         name,
         data: {
-            mapLayout: { nodes: [], links: [], logicalConstructs: [] },
+            maps: [{ id: defaultMapId, name: 'Main Map', layout: { nodes: [], links: [], logicalConstructs: [] } }],
+            activeMapId: defaultMapId,
             mapTrayConceptIds: [],
             trackedFeeds: [],
             seenPublicationIds: [],
@@ -29,17 +31,19 @@ const loadInitialSession = (): MultiProjectSession => {
             if (!savedSession.version || savedSession.version < MULTI_PROJECT_SESSION_VERSION) {
                  console.log(`Migrating session from v${savedSession.version || 'pre-version'} to v${MULTI_PROJECT_SESSION_VERSION}...`);
                  savedSession.projects.forEach((p: Project) => {
+                    // Version 11 migrations
                     if (!p.data.projectDiary) { p.data.projectDiary = []; }
-                    if (!p.data.mapLayout.logicalConstructs) { p.data.mapLayout.logicalConstructs = []; }
+                    const mapLayout = (p.data as any).mapLayout; // Use any to access old property
+                    if (mapLayout && !p.data.maps) {
+                        if (!mapLayout.logicalConstructs) { mapLayout.logicalConstructs = []; }
+                    }
                     if (!p.data.beliefFlipChallenges) { p.data.beliefFlipChallenges = []; }
-                    
-                    // Migration from importedNotes object to importedNoteSources array
                     if (p.data.importedNotes && !Array.isArray(p.data.importedNotes)) {
                         const sourceId = `source_${p.id}_${Date.now()}`;
                         const newSource: ImportedNoteSource = {
                             id: sourceId,
-                            publicationType: 'book', // Assume old data is a book
-                            title: p.data.importedNotes.title, // Use `title` instead of `bookTitle`
+                            publicationType: 'book',
+                            title: p.data.importedNotes.title,
                             author: p.data.importedNotes.author,
                             notes: p.data.importedNotes.notes.map(n => ({...n, sourceId})),
                         };
@@ -48,10 +52,9 @@ const loadInitialSession = (): MultiProjectSession => {
                     } else if (!p.data.importedNoteSources) {
                         p.data.importedNoteSources = [];
                     }
-
                     if (!p.data.processedNoteIds) { p.data.processedNoteIds = []; }
-                    if (p.data.mapLayout && p.data.mapLayout.links) {
-                        p.data.mapLayout.links = p.data.mapLayout.links.map((link: MapLink) => {
+                    if (mapLayout && mapLayout.links) {
+                        mapLayout.links = mapLayout.links.map((link: MapLink) => {
                              let newLink = { ...link };
                             if (newLink.relationshipType && !newLink.relationshipTypes) {
                                 newLink.relationshipTypes = [newLink.relationshipType];
@@ -63,14 +66,57 @@ const loadInitialSession = (): MultiProjectSession => {
                             return newLink;
                         });
                     }
-                    if(p.data.mapLayout && p.data.mapLayout.nodes){
-                        p.data.mapLayout.nodes.forEach((node: any) => {
+                    if(mapLayout && mapLayout.nodes){
+                        mapLayout.nodes.forEach((node: any) => {
                             if (node.sourceNote && !node.sourceNotes) {
                                 node.sourceNotes = [node.sourceNote];
                                 delete node.sourceNote;
                             }
                         })
                     }
+                    
+                    // Version 12 migration (multi-map)
+                    if (mapLayout && !p.data.maps) {
+                        const defaultMap: ConceptualMap = {
+                            id: `map_${p.id}_default`,
+                            name: 'Main Map',
+                            layout: mapLayout,
+                        };
+                        p.data.maps = [defaultMap];
+                        p.data.activeMapId = defaultMap.id;
+                        delete (p.data as any).mapLayout;
+                    } else if (!p.data.maps) {
+                        const defaultMapId = `map_${Date.now()}`;
+                        p.data.maps = [{ id: defaultMapId, name: 'Main Map', layout: { nodes: [], links: [], logicalConstructs: [] } }];
+                        p.data.activeMapId = defaultMapId;
+                    }
+
+                    // Version 13 migration (multi-note per concept)
+                    if (p.data.maps) {
+                        p.data.maps.forEach(map => {
+                            if (map.layout && map.layout.nodes) {
+                                map.layout.nodes = map.layout.nodes.map((node: any) => {
+                                    if (node.notes && typeof node.notes === 'string' && node.notes.trim() !== '' && node.notes.trim() !== '<p><br></p>') {
+                                        const now = Date.now();
+                                        const newUserNote: UserNote = {
+                                            id: `note_${now}_${Math.random().toString(36).substring(2, 9)}`,
+                                            title: 'Imported from previous version',
+                                            content: node.notes,
+                                            createdAt: now,
+                                            updatedAt: now,
+                                        };
+                                        if (!node.userNotes) {
+                                            node.userNotes = [];
+                                        }
+                                        node.userNotes.push(newUserNote);
+                                        delete node.notes; // Clean up old property
+                                    }
+                                    return node;
+                                });
+                            }
+                        });
+                    }
+
                  });
                  if (!savedSession.customRelationshipTypes) { savedSession.customRelationshipTypes = []; }
                  if (!savedSession.disabledDefaultTypes) { savedSession.disabledDefaultTypes = []; }
@@ -89,10 +135,17 @@ const loadInitialSession = (): MultiProjectSession => {
                         });
                     }
                     if (!p.data.projectDiary) { p.data.projectDiary = []; }
-                    if (!p.data.mapLayout.logicalConstructs) { p.data.mapLayout.logicalConstructs = []; }
-                     if (!p.data.beliefFlipChallenges) { p.data.beliefFlipChallenges = []; }
-                     if (!p.data.importedNoteSources) { p.data.importedNoteSources = []; }
+                    if (!p.data.beliefFlipChallenges) { p.data.beliefFlipChallenges = []; }
+                    if (!p.data.importedNoteSources) { p.data.importedNoteSources = []; }
                     if (!p.data.processedNoteIds) { p.data.processedNoteIds = []; }
+                    if (!p.data.maps) {
+                         const defaultMapId = `map_${p.id}_${Date.now()}`;
+                        p.data.maps = [{ id: defaultMapId, name: 'Main Map', layout: { nodes: [], links: [], logicalConstructs: [] } }];
+                        p.data.activeMapId = defaultMapId;
+                    }
+                    if (!p.data.activeMapId && p.data.maps.length > 0) {
+                        p.data.activeMapId = p.data.maps[0].id;
+                    }
                 });
                 
                 if (!savedSession.customRelationshipTypes) { savedSession.customRelationshipTypes = []; }
@@ -127,8 +180,10 @@ const loadInitialSession = (): MultiProjectSession => {
     if (!oldMapLayout.logicalConstructs) oldMapLayout.logicalConstructs = [];
     
     const defaultProject = createNewProject("Default Project");
+    const defaultMapId = `map_default_${Date.now()}`;
     defaultProject.data = {
-        mapLayout: oldMapLayout,
+        maps: [{ id: defaultMapId, name: 'Main Map', layout: oldMapLayout }],
+        activeMapId: defaultMapId,
         mapTrayConceptIds: JSON.parse(localStorage.getItem('mapTrayConceptIds') || '[]'),
         trackedFeeds: JSON.parse(localStorage.getItem('trackedFeeds') || '[]'),
         seenPublicationIds: JSON.parse(localStorage.getItem('seenPublicationIds') || '[]'),

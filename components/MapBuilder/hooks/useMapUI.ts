@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { D3Node, MapNode, MapLink, RelationshipType, Citation, LogicalConstruct, ProjectActivityType, NodeContextMenuState, LinkContextMenuState, EditLinkTypesMenuState, FloatingTooltipState, ChangeNodeState, ColorPickerState, DialecticAnalysisState, LogicalWorkbenchState, FormalizationResult } from '../../../types';
+import { D3Node, MapNode, MapLink, RelationshipType, Citation, LogicalConstruct, ProjectActivityType, NodeContextMenuState, LinkContextMenuState, EditLinkTypesMenuState, FloatingTooltipState, ChangeNodeState, ColorPickerState, DialecticAnalysisState, LogicalWorkbenchState, FormalizationResult, ConfirmationRequestHandler } from '../../../types';
 import { getMidpoint } from '../utils/calculations';
 
 const textColors = ['#FFFFFF', '#FDE047', '#A7F3D0', '#A5B4FC', '#F9A8D4', '#FCA5A5']; // White, Yellow, Green, Indigo, Pink, Red
@@ -10,9 +10,10 @@ interface UseMapUIProps {
     setLayout: React.Dispatch<React.SetStateAction<{ nodes: MapNode[], links: MapLink[], logicalConstructs: LogicalConstruct[] }>>;
     logActivity: (type: ProjectActivityType, payload: any) => void;
     nodeMap: Map<string | number, MapNode>;
+    onRequestConfirmation: ConfirmationRequestHandler;
 }
 
-export const useMapUI = ({ allNodes, layout, setLayout, logActivity, nodeMap }: UseMapUIProps) => {
+export const useMapUI = ({ allNodes, layout, setLayout, logActivity, nodeMap, onRequestConfirmation }: UseMapUIProps) => {
     const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState | null>(null);
     const [linkContextMenu, setLinkContextMenu] = useState<LinkContextMenuState | null>(null);
     const [editLinkTypesMenu, setEditLinkTypesMenu] = useState<EditLinkTypesMenuState | null>(null);
@@ -226,6 +227,22 @@ export const useMapUI = ({ allNodes, layout, setLayout, logActivity, nodeMap }: 
         setNodeContextMenu(null);
     }, [setLayout]);
 
+    const deleteSelection = useCallback((nodeIds: Set<string|number>) => {
+        onRequestConfirmation({
+            message: `Are you sure you want to delete ${nodeIds.size} selected nodes and their connections?`,
+            title: 'Delete Selection',
+            confirmText: 'Delete',
+            onConfirm: () => {
+                setLayout(prev => ({
+                    nodes: prev.nodes.filter(n => !nodeIds.has(n.id)),
+                    links: prev.links.filter(l => !nodeIds.has(l.source) && !nodeIds.has(l.target)),
+                    logicalConstructs: (prev.logicalConstructs || []).filter(c => !nodeIds.has(c.conclusionNodeId) && c.premiseNodeIds.every(pId => !nodeIds.has(pId))),
+                }));
+                clearSelections();
+            }
+        });
+    }, [setLayout, onRequestConfirmation, clearSelections]);
+
     const updateNodeShape = useCallback((nodeId: number | string, shape: 'rect' | 'circle') => {
         setLayout(prev => ({
             ...prev,
@@ -237,7 +254,21 @@ export const useMapUI = ({ allNodes, layout, setLayout, logActivity, nodeMap }: 
     const updateLinkPathStyle = useCallback((link: MapLink, pathStyle: 'straight' | 'curved') => {
         setLayout(prev => ({
             ...prev,
-            links: prev.links.map(l => (l.source === link.source && l.target === link.target) ? { ...l, pathStyle } : l)
+            links: prev.links.map(l => (l.source === link.source && l.target === link.target) ? { ...l, pathStyle, curveDirection: l.curveDirection || 1 } : l)
+        }));
+        setLinkContextMenu(null);
+    }, [setLayout]);
+
+    const flipLinkCurve = useCallback((link: MapLink) => {
+        setLayout(prev => ({
+            ...prev,
+            links: prev.links.map(l => {
+                if (l.source === link.source && l.target === link.target) {
+                    const newDirection = (l.curveDirection || 1) * -1;
+                    return { ...l, curveDirection: newDirection };
+                }
+                return l;
+            })
         }));
         setLinkContextMenu(null);
     }, [setLayout]);
@@ -383,8 +414,10 @@ export const useMapUI = ({ allNodes, layout, setLayout, logActivity, nodeMap }: 
         handleCreateLogicalConstruct,
         handleTextColorChange,
         deleteNode,
+        deleteSelection,
         updateNodeShape,
         updateLinkPathStyle,
+        flipLinkCurve,
         updateLinkRelationshipTypes,
         deleteLink,
         createLink,

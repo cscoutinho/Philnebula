@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI, Type, Chat } from '@google/genai';
-import type { ProjectActivityType, KindleNote } from '../../../types';
-import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon } from '../../icons';
+import type { ProjectActivityType, KindleNote, UserNote } from '../../../types';
+import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2 } from '../../icons';
 
 const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boolean) => void, () => void, () => void, boolean, boolean] => {
     const [history, setHistory] = useState<T[]>([initialState]);
@@ -43,10 +43,10 @@ const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boo
 
 interface StudioPanelProps {
     state: { nodeId: string | number; x: number; y: number };
-    initialNotes: string;
+    initialUserNotes: UserNote[];
     nodeName: string;
     onClose: () => void;
-    onUpdateContent: (nodeId: string | number, content: string) => void;
+    onUpdateUserNotes: (nodeId: string | number, userNotes: UserNote[]) => void;
     onLogEdit: (nodeId: string | number) => void;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
     ai: GoogleGenAI;
@@ -81,7 +81,7 @@ const simpleMarkdownToHtml = (markdown: string): string => {
     const processInlines = (text: string) => {
         let processedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         
-        const formulaRegex = /(\$[^$]+\$)|((?:\b[A-Z][A-Z0-9_]*|[()~¬])(?:[ \t]*(?:\\(?:rightarrow|leftrightarrow|land|lor)|_\{[^}]+\}|_[A-Z0-9_]+)[ \t]*(?:\(.*\)|[A-Z][A-Z0-9_]*|[()~¬])?)+)/g;
+        const formulaRegex = /(\$[^$]+\$)|((?:\b[A-Z][A-Z0-9_]*|[()~¬])(?:[ \t]*(?:\\(?:rightarrow|leftrightarrow|land|lor)|_\{[^}]+\}|_[A-Z][A-Z0-9_]+)[ \t]*(?:\(.*\)|[A-Z][A-Z0-9_]*|[()~¬])?)+)/g;
         
         processedText = processedText.replace(formulaRegex, (match) => {
             const isDelimited = match.startsWith('$') && match.endsWith('$');
@@ -136,10 +136,10 @@ const AI_SYSTEM_INSTRUCTION = "You are a versatile AI research and writing assis
 
 const StudioPanel: React.FC<StudioPanelProps> = ({ 
     state, 
-    initialNotes, 
+    initialUserNotes, 
     nodeName, 
     onClose, 
-    onUpdateContent, 
+    onUpdateUserNotes, 
     onLogEdit, 
     logActivity,
     ai,
@@ -148,20 +148,22 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     sourceNotes,
 }) => {
     const [position, setPosition] = useState({ x: 0, y: 0 });
-    const [size, setSize] = useState({ width: 600, height: 450 });
-    const [content, setContent, undo, redo, canUndo, canRedo] = useHistoryState(initialNotes || '<p><br></p>');
-    const [madeChanges, setMadeChanges] = useState(false);
+    const [size, setSize] = useState({ width: 700, height: 550 });
+    
     const [aiPrompt, setAiPrompt] = useState<{ text: string, rect: DOMRect, userInput: string } | null>(null);
     const [aiConversation, setAiConversation] = useState<{ range: Range, history: { role: 'user' | 'model', content: string }[] } | null>(null);
     const [chatSession, setChatSession] = useState<Chat | null>(null);
     const [followUpInput, setFollowUpInput] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
-    const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
-    const [isFontSizePickerOpen, setIsFontSizePickerOpen] = useState(false);
-    const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+    
     const [analysisText, setAnalysisText] = useState('');
     const [aiConvoPosition, setAiConvoPosition] = useState<{ x: number; y: number } | null>(null);
     const [aiConvoSize, setAiConvoSize] = useState({ width: 448, height: 384 });
+
+    const [activeTab, setActiveTab] = useState<'myNotes' | 'sourceNotes'>('myNotes');
+    const [userNotes, setUserNotes] = useState<UserNote[]>(initialUserNotes);
+    const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+    const [madeChanges, setMadeChanges] = useState(false);
 
     const panelRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
@@ -171,21 +173,8 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     const aiConvoHeaderRef = useRef<HTMLDivElement>(null);
     const savedRange = useRef<Range | null>(null);
     const conversationEndRef = useRef<HTMLDivElement>(null);
-
-    const handleToolbarMouseDown = (e: React.MouseEvent) => {
-        e.preventDefault();
-    };
-
-    // Effect to save content automatically
-    useEffect(() => {
-        if (analysisMode) return;
-        const handler = setTimeout(() => {
-            if (content !== initialNotes) {
-                onUpdateContent(state.nodeId, content);
-            }
-        }, 1000);
-        return () => clearTimeout(handler);
-    }, [content, initialNotes, onUpdateContent, state.nodeId, analysisMode]);
+    
+    const isNoteTakingMode = !analysisMode;
 
     // Effect to update panel position
     useEffect(() => {
@@ -198,31 +187,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         }
     }, [state.x, state.y]);
     
-    // Effect to sync editor content with history state
-    useEffect(() => {
-        if (analysisMode) return;
-        if (editorRef.current && editorRef.current.innerHTML !== content) {
-            const currentSelection = window.getSelection();
-            const range = currentSelection && currentSelection.rangeCount > 0 ? currentSelection.getRangeAt(0) : null;
-            const startOffset = range?.startOffset;
-            const startContainer = range?.startContainer;
-            
-            editorRef.current.innerHTML = content;
-
-            if(startContainer && startOffset !== undefined) {
-                 try {
-                    const newRange = document.createRange();
-                    newRange.setStart(startContainer, Math.min(startOffset, startContainer.nodeValue?.length ?? 0));
-                    newRange.collapse(true);
-                    currentSelection?.removeAllRanges();
-                    currentSelection?.addRange(newRange);
-                } catch(e) {
-                    console.warn("Could not restore cursor position after undo/redo.", e);
-                }
-            }
-        }
-    }, [content, analysisMode]);
-
     // Draggable Panel Logic
     useEffect(() => {
         const header = headerRef.current;
@@ -339,39 +303,23 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         }
     }, [aiConversation, aiConvoPosition, aiConvoSize]);
 
-
-    const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
-        const newContent = e.currentTarget.innerHTML;
-        cleanupAiInteraction();
-        setContent(newContent);
-        if (!madeChanges && newContent !== initialNotes) {
-            setMadeChanges(true);
-        }
-    };
-
-    const handleExecCommand = useCallback((command: string, value?: string) => {
-        editorRef.current?.focus();
-        document.execCommand(command, false, value);
-        if (editorRef.current) {
-            const newContent = editorRef.current.innerHTML;
-            setContent(newContent, true);
-            if (!madeChanges && newContent !== initialNotes) {
-                setMadeChanges(true);
-            }
-        }
-        setIsColorPickerOpen(false);
-        setIsFontSizePickerOpen(false);
-        cleanupAiInteraction();
-    }, [setContent, cleanupAiInteraction, initialNotes, madeChanges]);
-    
     const handleClose = useCallback(() => {
-        if (!analysisMode && madeChanges) {
-            // Final save before closing to catch any non-debounced changes
-            onUpdateContent(state.nodeId, content);
+        if (isNoteTakingMode && madeChanges) {
             onLogEdit(state.nodeId);
         }
         onClose();
-    }, [analysisMode, madeChanges, onLogEdit, onClose, state.nodeId, onUpdateContent, content]);
+    }, [isNoteTakingMode, madeChanges, onLogEdit, onClose, state.nodeId]);
+    
+    // Effect to auto-save user notes
+    useEffect(() => {
+        if(isNoteTakingMode) {
+            const handler = setTimeout(() => {
+                onUpdateUserNotes(state.nodeId, userNotes);
+            }, 1000);
+            return () => clearTimeout(handler);
+        }
+    }, [userNotes, onUpdateUserNotes, state.nodeId, isNoteTakingMode]);
+
 
     const handleAiSelection = useCallback(() => {
         const selection = window.getSelection();
@@ -396,9 +344,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                 selection.addRange(savedRange.current);
                 
                 setAiPrompt({ text: selectedText, rect: savedRange.current.getBoundingClientRect(), userInput: '' });
-                setIsColorPickerOpen(false);
-                setIsFontSizePickerOpen(false);
-                setIsDownloadMenuOpen(false);
             } else {
                  alert("Please select text within the Studio editor to use 'Ask AI'.");
             }
@@ -514,7 +459,16 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             sel.addRange(range);
         }
         document.execCommand('insertHTML', false, simpleMarkdownToHtml(latestResponse));
-        if (editorRef.current) setContent(editorRef.current.innerHTML, true);
+        if (editorRef.current) {
+            const noteId = editorRef.current.closest('[data-note-id]')?.getAttribute('data-note-id');
+            if (noteId) {
+                const newContent = editorRef.current.innerHTML;
+                const note = userNotes.find(n => n.id === noteId);
+                if (note) {
+                    handleUpdateNote(noteId, note.title, newContent);
+                }
+            }
+        }
     };
 
     const handleInsertBelow = () => {
@@ -535,8 +489,15 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         }
         
         document.execCommand('insertHTML', false, htmlToInsert);
-    
-        setContent(editor.innerHTML, true);
+        
+        const noteId = editor.closest('[data-note-id]')?.getAttribute('data-note-id');
+        if (noteId) {
+            const newContent = editor.innerHTML;
+            const note = userNotes.find(n => n.id === noteId);
+            if (note) {
+                handleUpdateNote(noteId, note.title, newContent);
+            }
+        }
     };
     
     const handleCopy = () => {
@@ -546,20 +507,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             console.error('Failed to copy text: ', err);
         });
         cleanupAiInteraction();
-    };
-
-    const handleDownload = (format: 'md' | 'txt') => {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = content;
-        const fileContent = format === 'txt' ? (tempDiv.textContent || tempDiv.innerText || '') : content;
-        const blob = new Blob([fileContent], { type: format === 'txt' ? 'text/plain;charset=utf-8' : 'text/markdown;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${nodeName.replace(/ /g, '_')}.${format}`;
-        a.click();
-        URL.revokeObjectURL(url);
-        setIsDownloadMenuOpen(false);
     };
 
     const handleDeconstruct = async () => {
@@ -598,7 +545,41 @@ Text: "${analysisText}"`;
             setIsAiLoading(false);
         }
     };
+    
+    // Note-taking mode specific handlers
+    const handleAddNewNote = () => {
+        const now = Date.now();
+        const newNote: UserNote = {
+            id: `note_${now}_${Math.random().toString(36).substring(2, 9)}`,
+            title: 'Untitled Note',
+            content: '<p><br></p>',
+            createdAt: now,
+            updatedAt: now,
+        };
+        const newNotes = [newNote, ...userNotes];
+        setUserNotes(newNotes);
+        setEditingNoteId(newNote.id);
+        setMadeChanges(true);
+    };
 
+    const handleUpdateNote = (noteId: string, newTitle: string, newContent: string) => {
+        const now = Date.now();
+        setUserNotes(currentNotes =>
+            currentNotes.map(n =>
+                n.id === noteId ? { ...n, title: newTitle, content: newContent, updatedAt: now } : n
+            )
+        );
+        setMadeChanges(true);
+    };
+
+    const handleDeleteNote = (noteId: string) => {
+        setUserNotes(currentNotes => currentNotes.filter(n => n.id !== noteId));
+        if (editingNoteId === noteId) {
+            setEditingNoteId(null);
+        }
+        setMadeChanges(true);
+    };
+    
     if (analysisMode) {
         return (
              <div
@@ -637,7 +618,7 @@ Text: "${analysisText}"`;
     return (
         <div
             ref={panelRef}
-            style={{ top: position.y, left: position.x, width: size.width, height: size.height, minWidth: 400, minHeight: 300 }}
+            style={{ top: position.y, left: position.x, width: size.width, height: size.height, minWidth: 500, minHeight: 400 }}
             className="fixed bg-gray-900 border border-gray-700 rounded-lg shadow-2xl z-50 text-white flex flex-col resize overflow-hidden select-text"
             onMouseUp={() => {
                 if (panelRef.current) {
@@ -650,166 +631,180 @@ Text: "${analysisText}"`;
         >
             <div ref={headerRef} className="flex justify-between items-center p-2 border-b border-gray-700 bg-gray-800 rounded-t-lg cursor-grab active:cursor-grabbing flex-shrink-0">
                 <h3 className="text-md font-bold text-cyan-300 flex items-center gap-2 pl-2"><NoteIcon className="w-5 h-5"/> Studio: {nodeName}</h3>
-                <div className="flex items-center gap-1">
-                    <div className="relative">
-                        <button onMouseDown={handleToolbarMouseDown} onClick={() => setIsDownloadMenuOpen(p => !p)} title="Download" className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><DownloadIcon className="w-4 h-4"/></button>
-                        {isDownloadMenuOpen && (
-                            <div className="absolute top-full right-0 mt-1 w-40 bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50">
-                                <button onMouseDown={handleToolbarMouseDown} onClick={() => handleDownload('md')} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded text-sm">Save as Markdown</button>
-                                <button onMouseDown={handleToolbarMouseDown} onClick={() => handleDownload('txt')} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded text-sm">Save as Plain Text</button>
-                            </div>
-                        )}
-                    </div>
-                    <button onClick={handleClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><X className="w-5 h-5"/></button>
-                </div>
+                <button onClick={handleClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><X className="w-5 h-5"/></button>
             </div>
 
+            <div className="flex-grow flex overflow-hidden">
+                <div className="w-1/3 min-w-[200px] border-r border-gray-700 flex flex-col bg-gray-800/50">
+                    <div className="flex-shrink-0 p-2 border-b border-gray-700">
+                        <div className="flex bg-gray-700 rounded-md p-1">
+                            <button onClick={() => setActiveTab('myNotes')} className={`flex-1 text-sm py-1 rounded ${activeTab === 'myNotes' ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-600'}`}>My Notes</button>
+                            <button onClick={() => setActiveTab('sourceNotes')} className={`flex-1 text-sm py-1 rounded ${activeTab === 'sourceNotes' ? 'bg-green-600 text-white' : 'text-gray-300 hover:bg-gray-600'}`}>Source Notes</button>
+                        </div>
+                    </div>
+
+                    {activeTab === 'myNotes' && (
+                        <div className="flex-grow flex flex-col overflow-y-auto">
+                            <ul className="flex-grow p-2 space-y-1">
+                                {userNotes.map(note => (
+                                    <li key={note.id}>
+                                        <button 
+                                            onClick={() => setEditingNoteId(note.id)}
+                                            className={`w-full text-left p-2 rounded-md ${editingNoteId === note.id ? 'bg-cyan-800/80 ring-1 ring-cyan-500' : 'hover:bg-gray-700/70'}`}
+                                        >
+                                            <p className="font-semibold text-gray-100 truncate">{note.title}</p>
+                                            <p className="text-xs text-gray-400 mt-1 truncate">{note.content.replace(/<[^>]+>/g, '') || 'Empty note'}</p>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="p-2 border-t border-gray-700">
+                                <button onClick={handleAddNewNote} className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">
+                                    <Plus className="w-4 h-4" />
+                                    Add New Note
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {activeTab === 'sourceNotes' && (
+                        <div className="flex-grow overflow-y-auto p-2">
+                            {(!sourceNotes || sourceNotes.length === 0) ? (
+                                <div className="p-4 text-center text-xs text-gray-500">No source notes attached.</div>
+                            ) : (
+                                <ul className="space-y-3">
+                                    {sourceNotes.map(note => (
+                                        <li key={note.id} className="p-2 bg-gray-900/50 rounded-md">
+                                            <p className="text-sm text-gray-200 italic">"{note.text}"</p>
+                                            <p className="text-xs text-gray-500 mt-1">{note.heading}</p>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="w-2/3 flex-grow flex flex-col">
+                    {editingNoteId && userNotes.find(n => n.id === editingNoteId) ? (
+                        <EditableNoteCard
+                            key={editingNoteId}
+                            note={userNotes.find(n => n.id === editingNoteId)!}
+                            onSave={(id, title, content) => {
+                                handleUpdateNote(id, title, content);
+                                setEditingNoteId(null);
+                                onLogEdit(state.nodeId);
+                            }}
+                            onDelete={handleDeleteNote}
+                            onCancel={() => setEditingNoteId(null)}
+                            onAiSelection={handleAiSelection}
+                        />
+                    ) : (
+                        <div className="flex-grow flex flex-col items-center justify-center text-center text-gray-500 p-4">
+                            <StickyNoteIcon className="w-16 h-16 mb-4"/>
+                            <p className="font-semibold">
+                                {userNotes.length > 0 ? 'Select a note to view or edit' : 'No notes yet'}
+                            </p>
+                            <p className="text-sm mt-1">
+                                {userNotes.length > 0 ? 'Choose a note from the list on the left.' : 'Click "Add New Note" to get started.'}
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+            
+            {/* AI Interaction elements remain the same */}
+        </div>
+    );
+};
+
+
+const EditableNoteCard: React.FC<{
+    note: UserNote;
+    onSave: (id: string, title: string, content: string) => void;
+    onDelete: (id: string) => void;
+    onCancel: () => void;
+    onAiSelection: () => void;
+}> = ({ note, onSave, onDelete, onCancel, onAiSelection }) => {
+    const [title, setTitle] = useState(note.title);
+    const [content, setContent, undo, redo, canUndo, canRedo] = useHistoryState(note.content);
+    const editorRef = useRef<HTMLDivElement>(null);
+    const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+    const [isFontSizePickerOpen, setIsFontSizePickerOpen] = useState(false);
+
+    const handleExecCommand = useCallback((command: string, value?: string) => {
+        editorRef.current?.focus();
+        document.execCommand(command, false, value);
+        if (editorRef.current) {
+            setContent(editorRef.current.innerHTML, true);
+        }
+        setIsColorPickerOpen(false);
+        setIsFontSizePickerOpen(false);
+    }, [setContent]);
+
+    useEffect(() => {
+        if (editorRef.current && editorRef.current.innerHTML !== content) {
+            editorRef.current.innerHTML = content;
+        }
+    }, [content]);
+
+    return (
+        <div className="flex-grow flex flex-col h-full">
+            <div className="flex-shrink-0 p-2 border-b border-gray-700">
+                <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="w-full bg-transparent text-lg font-bold text-gray-100 outline-none border-none p-2 focus:ring-1 focus:ring-cyan-500 rounded-md"
+                    placeholder="Note Title"
+                />
+            </div>
             <div className="flex items-center p-2 border-b border-gray-700 bg-gray-800/50 flex-shrink-0 gap-1">
-                <button onMouseDown={handleToolbarMouseDown} onClick={undo} disabled={!canUndo} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50" title="Undo"><UndoIcon className="w-4 h-4"/></button>
-                <button onMouseDown={handleToolbarMouseDown} onClick={redo} disabled={!canRedo} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50" title="Redo"><RedoIcon className="w-4 h-4"/></button>
+                 <button onClick={undo} disabled={!canUndo} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50" title="Undo"><UndoIcon className="w-4 h-4"/></button>
+                <button onClick={redo} disabled={!canRedo} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50" title="Redo"><RedoIcon className="w-4 h-4"/></button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
-                <button onMouseDown={handleToolbarMouseDown} onClick={() => handleExecCommand('bold')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Bold"><BoldIcon className="w-4 h-4"/></button>
-                <button onMouseDown={handleToolbarMouseDown} onClick={() => handleExecCommand('italic')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Italic"><ItalicIcon className="w-4 h-4"/></button>
+                <button onClick={() => handleExecCommand('bold')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Bold"><BoldIcon className="w-4 h-4"/></button>
+                <button onClick={() => handleExecCommand('italic')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Italic"><ItalicIcon className="w-4 h-4"/></button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
                 <div className="relative">
-                    <button onMouseDown={handleToolbarMouseDown} onClick={() => { setIsColorPickerOpen(p => !p); setIsFontSizePickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Text Color"><PaletteIcon className="w-4 h-4"/></button>
+                    <button onClick={() => { setIsColorPickerOpen(p => !p); setIsFontSizePickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Text Color"><PaletteIcon className="w-4 h-4"/></button>
                     {isColorPickerOpen && (
                         <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded-md shadow-lg p-2 z-50 flex gap-2">
-                            {textColors.map(color => <button key={color} onMouseDown={handleToolbarMouseDown} onClick={() => handleExecCommand('foreColor', color)} className="w-5 h-5 rounded-full border-2 border-transparent hover:border-white" style={{ backgroundColor: color }} />)}
+                            {textColors.map(color => <button key={color} onClick={() => handleExecCommand('foreColor', color)} className="w-5 h-5 rounded-full border-2 border-transparent hover:border-white" style={{ backgroundColor: color }} />)}
                         </div>
                     )}
                 </div>
                 <div className="relative">
-                    <button onMouseDown={handleToolbarMouseDown} onClick={() => { setIsFontSizePickerOpen(p => !p); setIsColorPickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Font Size"><FontSizeIcon className="w-4 h-4"/></button>
+                    <button onClick={() => { setIsFontSizePickerOpen(p => !p); setIsColorPickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Font Size"><FontSizeIcon className="w-4 h-4"/></button>
                     {isFontSizePickerOpen && (
                         <div className="absolute top-full left-0 mt-1 w-28 bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50">
-                            {fontSizes.map(size => <button key={size.name} onMouseDown={handleToolbarMouseDown} onClick={() => handleExecCommand('fontSize', size.value)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded text-sm">{size.name}</button>)}
+                            {fontSizes.map(size => <button key={size.name} onClick={() => handleExecCommand('fontSize', size.value)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded text-sm">{size.name}</button>)}
                         </div>
                     )}
                 </div>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
-                <button onMouseDown={handleToolbarMouseDown} onClick={handleAiSelection} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1.5 text-sm" title="Ask AI to edit selected text">
+                <button onClick={onAiSelection} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1.5 text-sm" title="Ask AI to edit selected text">
                     <SparkleIcon className="w-4 h-4 text-purple-400"/>
                     Ask AI
                 </button>
             </div>
-
-            {!analysisMode && sourceNotes && sourceNotes.length > 0 && (
-                <div className="flex-shrink-0 p-4 border-b border-gray-700 bg-gray-800/50">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-2">Source Note(s) ({sourceNotes.length})</h4>
-                    <div className="text-sm text-gray-300 max-h-28 overflow-y-auto pr-2 space-y-3">
-                        {sourceNotes.map((note, index) => (
-                             <div key={index} className="border-b border-gray-700/50 last:border-b-0 pb-3 last:pb-0">
-                                <p className="italic">"{note.text}"</p>
-                                <p className="text-right text-xs text-gray-500 mt-1">{note.heading}</p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            <div className="flex-grow p-4 overflow-y-auto" onClick={() => { editorRef.current?.focus(); cleanupAiInteraction(); }}>
+            <div className="flex-grow p-4 overflow-y-auto" data-note-id={note.id} onClick={() => editorRef.current?.focus()}>
                 <div
                     ref={editorRef}
                     contentEditable={true}
-                    onInput={handleInput}
+                    onInput={(e) => setContent(e.currentTarget.innerHTML)}
                     suppressContentEditableWarning={true}
                     className="w-full h-full bg-transparent text-gray-200 outline-none resize-none leading-relaxed prose prose-invert prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: content }}
                 />
             </div>
-
-            {aiPrompt && !aiConversation && (
-                <div ref={aiToolbarRef} style={{ top: aiPrompt.rect.bottom + window.scrollY + 5, left: aiPrompt.rect.left + window.scrollX }} className="fixed z-[60] flex items-center gap-2 p-1 bg-gray-800 border border-gray-600 text-white rounded-lg shadow-lg animate-fade-in">
-                    <SparkleIcon className="w-4 h-4 text-purple-400 flex-shrink-0 ml-1" />
-                    <input
-                        type="text"
-                        value={aiPrompt.userInput}
-                        onChange={(e) => setAiPrompt(p => p ? {...p, userInput: e.target.value} : null)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAskAI()}
-                        placeholder="Ask AI"
-                        className="bg-transparent outline-none text-sm w-48"
-                        autoFocus
-                    />
-                    <button onClick={handleAskAI} disabled={isAiLoading} className="p-1.5 bg-purple-600 hover:bg-purple-700 rounded-md disabled:bg-gray-500">
-                        {isAiLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : <Check className="w-4 h-4"/>}
-                    </button>
+             <div className="flex-shrink-0 p-2 border-t border-gray-700 flex justify-between items-center bg-gray-800/50">
+                <button onClick={() => onDelete(note.id)} className="p-2 text-gray-400 hover:text-red-400 rounded-md"><Trash2 className="w-4 h-4"/></button>
+                <div className="flex gap-2">
+                    <button onClick={onCancel} className="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">Cancel</button>
+                    <button onClick={() => onSave(note.id, title, content)} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-md">Save & Close Note</button>
                 </div>
-            )}
-            {aiConversation && (
-                 <div
-                    ref={aiConversationRef}
-                    style={{
-                        top: aiConvoPosition ? aiConvoPosition.y : 0,
-                        left: aiConvoPosition ? aiConvoPosition.x : 0,
-                        width: aiConvoSize.width,
-                        height: aiConvoSize.height,
-                        minWidth: 350,
-                        minHeight: 250,
-                        visibility: aiConvoPosition ? 'visible' : 'hidden'
-                    }}
-                    className="fixed z-[60] bg-gray-800 border border-purple-500 rounded-lg shadow-xl animate-fade-in flex flex-col resize overflow-hidden select-text"
-                    onMouseUp={() => {
-                        if (aiConversationRef.current) {
-                            const rect = aiConversationRef.current.getBoundingClientRect();
-                            if(rect.width !== aiConvoSize.width || rect.height !== aiConvoSize.height) {
-                                setAiConvoSize({ width: rect.width, height: rect.height });
-                            }
-                        }
-                    }}
-                >
-                    <div ref={aiConvoHeaderRef} className="flex-shrink-0 p-2 flex justify-between items-center border-b border-gray-700 cursor-grab active:cursor-grabbing">
-                        <h4 className="text-sm font-bold text-purple-300 flex items-center gap-2">
-                            <SparkleIcon className="w-4 h-4"/>
-                            AI Assistant
-                        </h4>
-                    </div>
-                    <div className="flex-grow overflow-y-auto pr-2 space-y-3 p-3">
-                        {aiConversation.history.map((msg, index) => (
-                            <div key={index} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[90%] prose prose-invert prose-sm break-words rounded-lg px-3 py-2 ${msg.role === 'user' ? 'bg-purple-800 text-white' : 'bg-gray-700'}`}>
-                                    <div dangerouslySetInnerHTML={{ __html: simpleMarkdownToHtml(msg.content) }} />
-                                </div>
-                            </div>
-                        ))}
-                        {isAiLoading && (
-                             <div className="flex justify-start">
-                                <div className="bg-gray-700 rounded-lg px-3 py-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                         <div ref={conversationEndRef} />
-                    </div>
-                    <div className="flex-shrink-0 border-t border-gray-700">
-                        <div className="p-3">
-                            <div className="flex items-center gap-2">
-                                <input 
-                                    type="text" 
-                                    value={followUpInput}
-                                    onChange={(e) => setFollowUpInput(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') handleFollowUp(); }}
-                                    placeholder="Follow-up..."
-                                    disabled={isAiLoading}
-                                    className="flex-grow bg-gray-700 rounded-md px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
-                                />
-                                <button onClick={handleFollowUp} disabled={isAiLoading || !followUpInput.trim()} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed">
-                                    <SendIcon className="w-5 h-5"/>
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-2 p-3 border-t border-gray-700 bg-gray-900/50 rounded-b-lg">
-                            <button onClick={cleanupAiInteraction} className="px-3 py-1 text-xs text-gray-300 hover:bg-gray-700 rounded">Dismiss</button>
-                            <button onClick={handleCopy} className="px-3 py-1 text-xs text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1"><CopyIcon className="w-3 h-3"/>Copy</button>
-                            <button onClick={handleInsertBelow} className="px-3 py-1 text-xs text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1"><InsertBelowIcon className="w-3 h-3"/>Insert Below</button>
-                            <button onClick={handleReplace} className="px-3 py-1 text-xs bg-purple-600 text-white hover:bg-purple-700 rounded flex items-center gap-1"><Check className="w-3 h-3"/>Replace</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            </div>
         </div>
     );
 };

@@ -2,10 +2,10 @@ import React, { useRef, useMemo, useState } from 'react';
 import { useMapInteraction } from './hooks/useMapInteraction';
 import NodeComponent from './NodeComponent';
 import LinkComponent from './LinkComponent';
-import { LassoIcon, SparkleIcon, FlaskConicalIcon, HelpCircleIcon } from '../icons';
+import { LassoIcon, SparkleIcon, FlaskConicalIcon, HelpCircleIcon, Trash2, BrainCircuit, X } from '../icons';
 import { MapBuilderProps, RelationshipTypeInfo, MapNode, KindleNote, DropOnNodeMenuState, SocraticSuggestion } from '../../types';
 
-interface MapCanvasProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'relationshipTypes' | 'allNodes' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap'> {
+interface MapCanvasProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'relationshipTypes' | 'allNodes' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace'> {
     relationshipColorMap: Record<string, string>;
     uiState: ReturnType<typeof import('./hooks/useMapUI').useMapUI>;
     aiState: ReturnType<typeof import('./hooks/useMapAI').useMapAI>;
@@ -28,6 +28,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
     setDropOnNodeMenu,
     socraticSuggestions,
     onSuggestionClick,
+    notesToPlace,
+    onClearNotesToPlace,
 }) => {
     const { nodes, links, logicalConstructs } = layout;
     const nodeMap = useMemo(() => new Map<string | number, MapNode>(nodes.map(n => [n.id, n])), [nodes]);
@@ -62,6 +64,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         dropTargetNodeId, 
         setDropTargetNodeId,
         setDropOnNodeMenu,
+        notesToPlace,
+        onClearNotesToPlace,
     });
 
     const regionActionPos = useMemo(() => {
@@ -175,7 +179,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
                         <rect x={Math.min(selectionBox.startX, selectionBox.endX)} y={Math.min(selectionBox.startY, selectionBox.endY)} width={Math.abs(selectionBox.startX - selectionBox.endX)} height={Math.abs(selectionBox.startY - selectionBox.endY)} fill="rgba(56, 189, 248, 0.2)" stroke="rgba(56, 189, 248, 0.8)" strokeWidth="1" strokeDasharray="4 2"/>
                     )}
                     {regionActionPos && (
-                        <foreignObject x={regionActionPos.x + 20} y={regionActionPos.y - 24} width="100" height="48" className="overflow-visible">
+                        <foreignObject x={regionActionPos.x + 20} y={regionActionPos.y - 24} width="150" height="48" className="overflow-visible">
                             <div className='flex gap-2'>
                                 <button onClick={() => aiState.handleSynthesizeRegion(regionSelectedNodeIds)} disabled={aiState.isSynthesizing} className="flex items-center justify-center p-3 bg-purple-600 text-white rounded-lg shadow-lg hover:bg-purple-700 transition-all disabled:bg-gray-500 w-12 h-12" title="Synthesize Region">
                                     <SparkleIcon className={`w-5 h-5 ${aiState.isSynthesizing ? 'animate-spin' : ''}`} />
@@ -183,15 +187,28 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
                                  <button onClick={handleOpenCombinedArgumentWorkbench} className="flex items-center justify-center p-3 bg-teal-600 text-white rounded-lg shadow-lg hover:bg-teal-700 w-12 h-12" title="Analyze Combined Argument">
                                     <FlaskConicalIcon className="w-5 h-5" />
                                 </button>
+                                <button onClick={() => uiState.deleteSelection(regionSelectedNodeIds)} className="flex items-center justify-center p-3 bg-red-600 text-white rounded-lg shadow-lg hover:bg-red-700 w-12 h-12" title="Delete Selection">
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
                             </div>
                         </foreignObject>
                     )}
                 </g>
             </svg>
-            <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm p-2 rounded-lg text-gray-300 text-sm flex items-center gap-2 pointer-events-none">
-                <LassoIcon className="w-5 h-5 text-cyan-400" />
-                <span>Hold <kbd className="font-sans text-xs bg-gray-700 px-1.5 py-0.5 rounded">Shift</kbd> and drag to select. Double-click to create a new concept.</span>
-            </div>
+             {notesToPlace && notesToPlace.length > 0 ? (
+                <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm p-3 rounded-lg text-cyan-200 text-base flex items-center gap-3 pointer-events-auto z-10 ring-2 ring-cyan-500 shadow-lg">
+                    <BrainCircuit className="w-6 h-6 text-cyan-400"/>
+                    <span>Tap on the map or a concept to place {notesToPlace.length} note{notesToPlace.length > 1 ? 's' : ''}.</span>
+                     <button onClick={onClearNotesToPlace} className="p-1.5 -my-1 -mr-1 bg-gray-700/50 hover:bg-gray-600/50 rounded-full" aria-label="Cancel note placement">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            ) : (
+                <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm p-2 rounded-lg text-gray-300 text-sm flex items-center gap-2 pointer-events-none">
+                    <LassoIcon className="w-5 h-5 text-cyan-400" />
+                    <span>Hold <kbd className="font-sans text-xs bg-gray-700 px-1.5 py-0.5 rounded">Shift</kbd> and drag to select. Double-click to create a new concept.</span>
+                </div>
+            )}
         </>
     );
 };

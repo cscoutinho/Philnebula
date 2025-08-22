@@ -1,7 +1,8 @@
 
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { TrackedFeed, Publication, ProjectActivityType } from '../types';
-import { X, RssIcon, RefreshCw, BrainCircuit } from './icons';
+import { X, RssIcon, RefreshCw, BrainCircuit, GraduationCapIcon } from './icons';
 
 interface FeedPageProps {
     trackedFeeds: TrackedFeed[];
@@ -12,9 +13,10 @@ interface FeedPageProps {
     onRefreshSingleFeed: (feedId: string) => void;
     onMarkAsSeen: (link: string) => void;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
+    onAnalyzeResearch: (feed: TrackedFeed) => void;
 }
 
-const FeedPage: React.FC<FeedPageProps> = ({ trackedFeeds, publications, isLoading, onRemoveFeed, onRefreshFeeds, onRefreshSingleFeed, onMarkAsSeen, logActivity }) => {
+const FeedPage: React.FC<FeedPageProps> = ({ trackedFeeds, publications, isLoading, onRemoveFeed, onRefreshFeeds, onRefreshSingleFeed, onMarkAsSeen, logActivity, onAnalyzeResearch }) => {
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, feed: TrackedFeed } | null>(null);
     const [selectedFeedUrl, setSelectedFeedUrl] = useState<string | null>(null);
     
@@ -137,13 +139,24 @@ const FeedPage: React.FC<FeedPageProps> = ({ trackedFeeds, publications, isLoadi
 
                 {/* Right Panel for Displaying Publications */}
                 <section className="w-2/3 bg-gray-800 p-6 rounded-lg border border-gray-700 flex flex-col overflow-hidden">
-                     <div className="flex-shrink-0 mb-6">
-                        <h2 className="text-2xl font-bold text-white">{selectedFeed ? selectedFeed.nodeName : 'All Publications'}</h2>
-                        <p className="text-sm text-gray-400">
-                            {selectedFeed 
-                                ? `Showing ${filteredPublications.length} most recent items.` 
-                                : `Showing ${filteredPublications.length} most recent items from ${trackedFeeds.length} tracked concepts.`}
-                        </p>
+                     <div className="flex-shrink-0 mb-6 flex justify-between items-start">
+                        <div>
+                            <h2 className="text-2xl font-bold text-white">{selectedFeed ? selectedFeed.nodeName : 'All Publications'}</h2>
+                            <p className="text-sm text-gray-400">
+                                {selectedFeed 
+                                    ? `Showing ${filteredPublications.length} most recent items.` 
+                                    : `Showing ${filteredPublications.length} most recent items from ${trackedFeeds.length} tracked concepts.`}
+                            </p>
+                        </div>
+                        {selectedFeed && (
+                            <button
+                                onClick={() => onAnalyzeResearch(selectedFeed)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-500 transition-colors text-sm font-bold"
+                            >
+                                <GraduationCapIcon className="w-5 h-5" />
+                                Area Overview
+                            </button>
+                        )}
                     </div>
                     <div className="flex-grow overflow-y-auto -mr-3 pr-3">
                         {isLoading && filteredPublications.length === 0 ? (

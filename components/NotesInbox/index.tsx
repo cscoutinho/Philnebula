@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import type { KindleNote, ImportedNoteSource, PublicationType, ConfirmationRequestHandler } from '../../types';
 import * as notesParser from '../../services/notesParser';
@@ -16,6 +15,7 @@ interface NotesInboxProps {
     onUpdateSourceMetadata: (sourceId: string, metadata: Partial<Omit<ImportedNoteSource, 'id' | 'notes'>>) => void;
     onMarkNotesAsProcessed: (noteIds: string[]) => void;
     onRequestConfirmation: ConfirmationRequestHandler;
+    onAddSelectedNotesToMap: (notes: KindleNote[]) => void;
 }
 
 
@@ -35,7 +35,7 @@ const NoteCard: React.FC<{
         <li
             draggable
             onDragStart={(e) => handleDragStart(e, note)}
-            title="Drag to add to map"
+            title="Drag to add to map or select multiple"
             className={`group relative p-3 rounded-md transition-all duration-200 ${isProcessed ? 'opacity-40' : ''} ${isSelected ? 'bg-cyan-900/50 ring-2 ring-cyan-500' : 'bg-gray-800 hover:bg-gray-700'}`}
         >
              <div className="absolute top-2 left-2 z-10">
@@ -46,7 +46,7 @@ const NoteCard: React.FC<{
                     }
                 </button>
             </div>
-            <div className="pl-8 cursor-grab">
+            <div className="pl-8">
                 <p className="text-sm text-gray-200">{note.text}</p>
                 <div className="text-xs text-gray-500 mt-2 flex justify-between items-center">
                     <span className="truncate pr-2">{note.heading}</span>
@@ -59,7 +59,7 @@ const NoteCard: React.FC<{
     );
 };
 
-const NotesInbox: React.FC<NotesInboxProps> = ({ isOpen, onClose, importedNoteSources, processedNoteIds, onImportNotes, onDeleteSource, onUpdateSourceMetadata, onMarkNotesAsProcessed, onRequestConfirmation }) => {
+const NotesInbox: React.FC<NotesInboxProps> = ({ isOpen, onClose, importedNoteSources, processedNoteIds, onImportNotes, onDeleteSource, onUpdateSourceMetadata, onMarkNotesAsProcessed, onRequestConfirmation, onAddSelectedNotesToMap }) => {
     const [view, setView] = useState<'list' | 'selectType' | 'uploadWithDoi' | 'confirm'>('list');
     const [importType, setImportType] = useState<PublicationType | null>(null);
     const [pendingImport, setPendingImport] = useState<PendingSource | null>(null);
@@ -118,6 +118,34 @@ const NotesInbox: React.FC<NotesInboxProps> = ({ isOpen, onClose, importedNoteSo
         }
         return notes;
     }, [selectedSource, showProcessed, processedNoteIds, searchQuery]);
+
+    const groupedNotes = useMemo(() => {
+        if (!displayedNotes) return {};
+        
+        // Find the order of sections from the original, unfiltered source
+        const sectionOrder = selectedSource ? 
+            [...new Set(selectedSource.notes.map(n => n.section || 'General Notes'))] 
+            : [];
+
+        const grouped = displayedNotes.reduce((acc, note) => {
+            const section = note.section || 'General Notes';
+            if (!acc[section]) {
+                acc[section] = [];
+            }
+            acc[section].push(note);
+            return acc;
+        }, {} as Record<string, KindleNote[]>);
+        
+        // Sort the grouped object by the original section order
+        const orderedGrouped: Record<string, KindleNote[]> = {};
+        sectionOrder.forEach(section => {
+            if (grouped[section]) {
+                orderedGrouped[section] = grouped[section];
+            }
+        });
+        
+        return orderedGrouped;
+    }, [displayedNotes, selectedSource]);
     
     const fetchMetadata = useCallback(async (parsedData: { title: string, author: string, notes: Omit<KindleNote, 'sourceId'>[] }, publicationType: PublicationType, doiValue?: string) => {
         setIsFetchingMetadata(true);
@@ -125,19 +153,21 @@ const NotesInbox: React.FC<NotesInboxProps> = ({ isOpen, onClose, importedNoteSo
 
         try {
             if (publicationType === 'book') {
-                const query = `intitle:"${encodeURIComponent(parsedData.title)}" inauthor:"${encodeURIComponent(parsedData.author)}"`;
+                const query = `${encodeURIComponent(parsedData.title)} ${encodeURIComponent(parsedData.author)}`;
                 const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.items && data.items.length > 0) {
                         const book = data.items[0].volumeInfo;
+                        const fullTitle = book.subtitle ? `${book.title}: ${book.subtitle}` : book.title;
+                        
                         metadata.coverImageUrl = book.imageLinks?.thumbnail;
                         metadata.description = book.description;
-                        metadata.title = book.title || parsedData.title;
+                        metadata.title = fullTitle || parsedData.title;
                         metadata.author = book.authors?.join(', ') || parsedData.author;
                         metadata.publicationDate = book.publishedDate;
                         metadata.publisher = book.publisher;
-                        metadata.pages = book.pageCount?.toString();
+                        metadata.pages = book.pageCount ? book.pageCount.toString() : undefined;
                     }
                 }
             } else if ((publicationType === 'article' || publicationType === 'chapter') && doiValue) {
@@ -261,11 +291,12 @@ const NotesInbox: React.FC<NotesInboxProps> = ({ isOpen, onClose, importedNoteSo
         }
     };
 
-    const handleBatchDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+    const handleAddSelectedToMap = () => {
         if (!selectedSource) return;
-        const selectedNotes = selectedSource.notes.filter(n => selectedNoteIds.has(n.id));
-        e.dataTransfer.setData('application/x-kindle-notes-multiple', JSON.stringify(selectedNotes));
-        e.dataTransfer.effectAllowed = 'copy';
+        const notesToAdd = selectedSource.notes.filter(n => selectedNoteIds.has(n.id));
+        onAddSelectedNotesToMap(notesToAdd);
+        onMarkNotesAsProcessed(notesToAdd.map(n => n.id));
+        setSelectedNoteIds(new Set());
     };
 
     const handleMarkSelectedAsProcessed = () => {
@@ -511,29 +542,54 @@ const NotesInbox: React.FC<NotesInboxProps> = ({ isOpen, onClose, importedNoteSo
                         </button>
                     </div>
                 </div>
-                {displayedNotes.length > 0 ? (
-                    <ul className="flex-grow p-2 space-y-2 overflow-y-auto pb-16">
-                        {displayedNotes.map(note => (
-                            <NoteCard key={note.id} note={note} isProcessed={processedNoteIds.has(note.id)} isSelected={selectedNoteIds.has(note.id)} onToggleSelect={() => handleToggleSelect(note.id)} />
+                {Object.keys(groupedNotes).length > 0 ? (
+                    <div className="flex-grow p-2 space-y-2 overflow-y-auto pb-16">
+                        {Object.entries(groupedNotes).map(([section, notesInSection]) => (
+                            <details key={section} open className="group">
+                                <summary className="list-none flex items-center justify-between p-2 rounded-md bg-gray-800 cursor-pointer hover:bg-gray-700/80 transition-colors">
+                                    <span className="font-bold text-cyan-300 text-sm">{section}</span>
+                                    <div className='flex items-center gap-2'>
+                                        <span className="text-xs text-gray-500">{notesInSection.length}</span>
+                                        <ChevronLeft className="w-4 h-4 text-gray-400 transform transition-transform group-open:rotate-[-90deg]" />
+                                    </div>
+                                </summary>
+                                <ul className="pt-2 pl-2 border-l border-gray-700 ml-2 space-y-2">
+                                    {notesInSection.map(note => (
+                                        <NoteCard key={note.id} note={note} isProcessed={processedNoteIds.has(note.id)} isSelected={selectedNoteIds.has(note.id)} onToggleSelect={() => handleToggleSelect(note.id)} />
+                                    ))}
+                                </ul>
+                            </details>
                         ))}
-                    </ul>
+                    </div>
                 ) : (
                      <div className="p-4 text-center text-gray-500 text-sm flex-grow flex flex-col items-center justify-center">
                         <p>No notes to display.</p>
                      </div>
                 )}
                 {selectedNoteIds.size > 0 && (
-                    <div className="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 p-2 flex items-center justify-between z-10 animate-fade-in">
+                    <div 
+                        className="absolute bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 p-2 flex items-center justify-between z-10 animate-fade-in cursor-grab"
+                        draggable={true}
+                        onDragStart={(e) => {
+                            if (!selectedSource) return;
+                            const notesToDrag = selectedSource.notes.filter(n => selectedNoteIds.has(n.id));
+                            if (notesToDrag.length === 1) {
+                                e.dataTransfer.setData('application/x-kindle-note', JSON.stringify(notesToDrag[0]));
+                            } else {
+                                e.dataTransfer.setData('application/x-kindle-notes-multiple', JSON.stringify(notesToDrag));
+                            }
+                            e.dataTransfer.effectAllowed = 'copy';
+                        }}
+                    >
                         <span className="text-sm text-gray-300 px-2">{selectedNoteIds.size} selected</span>
                         <div className="flex items-center gap-2">
                             <button onClick={handleMarkSelectedAsProcessed} className="px-3 py-1 bg-gray-700 text-xs rounded hover:bg-gray-600">Mark as Processed</button>
-                            <div 
-                                draggable 
-                                onDragStart={handleBatchDragStart} 
-                                className="px-3 py-1 bg-cyan-700 text-white text-xs font-bold rounded cursor-grab active:cursor-grabbing"
+                            <button 
+                                onClick={handleAddSelectedToMap}
+                                className="px-3 py-1 bg-cyan-700 text-white text-xs font-bold rounded"
                             >
-                                Drag Group
-                            </div>
+                                Add to Map
+                            </button>
                         </div>
                     </div>
                 )}

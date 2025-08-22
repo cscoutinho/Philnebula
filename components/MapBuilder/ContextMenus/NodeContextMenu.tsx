@@ -37,7 +37,7 @@ const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
         <div className="fixed bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50 text-white text-sm animate-fade-in" onClick={e => e.stopPropagation()}>
             <button onClick={() => { setLinkingNode(nodeContextMenu.nodeId); setNodeContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2"><LinkIcon className="w-4 h-4"/>Create Link</button>
             <div className="my-1 border-t border-gray-700"></div>
-             <button onClick={() => { onEditNote(nodeContextMenu.nodeId); setNodeContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2"><NoteIcon className="w-4 h-4"/>Edit Note</button>
+             <button onClick={() => { onEditNote(nodeContextMenu.nodeId); setNodeContextMenu(null); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2"><NoteIcon className="w-4 h-4"/>Open Notes Studio</button>
             <button onClick={() => handleAnalyzeGenealogy(nodeContextMenu.nodeId)} disabled={isAnalyzingGenealogy} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 <HistoryIcon className="w-4 h-4"/>
                 {isAnalyzingGenealogy ? 'Analyzing...' : 'Analyze Genealogy'}

@@ -5,7 +5,7 @@ import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import 'd3-transition';
 import type { MapNode, MapLink, MapBuilderProps, LogicalWorkbenchState, KindleNote, DropOnNodeMenuState } from '../../../types';
 
-interface useMapInteractionProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap'> {
+interface useMapInteractionProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace'> {
     svgRef: React.RefObject<SVGSVGElement>;
     uiState: ReturnType<typeof import('./useMapUI').useMapUI>;
     aiState: ReturnType<typeof import('./useMapAI').useMapAI>;
@@ -28,6 +28,8 @@ export const useMapInteraction = ({
     dropTargetNodeId,
     setDropTargetNodeId,
     setDropOnNodeMenu,
+    notesToPlace,
+    onClearNotesToPlace,
 }: useMapInteractionProps) => {
     const {
         clearSelections,
@@ -40,6 +42,7 @@ export const useMapInteraction = ({
         setRelationshipMenu,
         selectedNodeId,
         setSelectedNodeId,
+        regionSelectedNodeIds,
         setRegionSelectedNodeIds,
         setNodeContextMenu,
     } = uiState;
@@ -49,6 +52,8 @@ export const useMapInteraction = ({
     const transformRef = useRef(zoomIdentity);
     const isDraggingSelection = useRef(false);
     const dragOccurred = useRef(false);
+    const dragStartPositions = useRef<Map<string | number, { x: number; y: number }>>(new Map());
+
 
     const [resizingState, setResizingState] = useState<{ nodeId: number | string, initialWidth: number, initialHeight: number, startX: number, startY: number, shape: 'rect' | 'circle' } | null>(null);
     const [selectionBox, setSelectionBox] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
@@ -69,6 +74,17 @@ export const useMapInteraction = ({
 
     const handleNodeClick = (e: React.MouseEvent, node: MapNode) => {
         e.stopPropagation();
+
+        if (notesToPlace && notesToPlace.length > 0) {
+            setDropOnNodeMenu({
+                x: e.clientX,
+                y: e.clientY,
+                targetNodeId: node.id,
+                droppedNotes: notesToPlace
+            });
+            return;
+        }
+        
         setFloatingTooltip(null);
         setEditingNodeId(null);
 
@@ -109,6 +125,17 @@ export const useMapInteraction = ({
     };
     
     const handleBackgroundClick = (e: React.MouseEvent) => {
+        if (notesToPlace && notesToPlace.length > 0) {
+            const { x, y } = getPointInWorldSpace(e);
+            if (notesToPlace.length === 1) {
+                onAddNoteToMap(notesToPlace[0], { x, y });
+            } else {
+                onAddMultipleNotesToMap(notesToPlace, { x, y });
+            }
+            onClearNotesToPlace();
+            return;
+        }
+
         if (!isDraggingSelection.current) {
             clearSelections();
             aiState.setDefinitionAnalysisState(null);
@@ -260,6 +287,21 @@ export const useMapInteraction = ({
             svg.call(zoomBehavior).on("dblclick.zoom", null);
         }
 
+        const handlePointerMoveEvent = (e: PointerEvent) => {
+            if (notesToPlace && notesToPlace.length > 0) {
+                const targetElement = e.target as SVGElement;
+                const nodeG = targetElement.closest('g.map-node');
+                if (nodeG && (nodeG as any).__data__) {
+                    const nodeData = (nodeG as any).__data__ as MapNode;
+                    setDropTargetNodeId(nodeData.id);
+                } else {
+                    setDropTargetNodeId(null);
+                }
+            }
+        };
+        
+        svgRef.current.addEventListener('pointermove', handlePointerMoveEvent);
+
         const dragBehavior = drag<SVGGElement, MapNode>()
             .filter(event => {
                 const target = event.target as SVGElement;
@@ -268,13 +310,33 @@ export const useMapInteraction = ({
             .on('start', (event, d) => {
                 dragOccurred.current = false;
                 select(event.sourceEvent.target.closest('g')).raise();
-                setSelectedNodeId(d.id);
+                 if (!regionSelectedNodeIds.has(d.id)) {
+                    setSelectedNodeId(d.id);
+                    setRegionSelectedNodeIds(new Set());
+                }
+                dragStartPositions.current.clear();
+                nodes.forEach(n => {
+                    if (regionSelectedNodeIds.has(n.id)) {
+                        dragStartPositions.current.set(n.id, { x: n.x, y: n.y });
+                    }
+                });
             })
             .on('drag', (event, d) => {
                 if (event.dx !== 0 || event.dy !== 0) {
                     dragOccurred.current = true;
                 }
-                updateNodePosition(d.id, event.x, event.y);
+                 if (regionSelectedNodeIds.has(d.id)) {
+                    // Multi-node drag
+                    setLayout(prev => ({
+                        ...prev,
+                        nodes: prev.nodes.map(n => 
+                            regionSelectedNodeIds.has(n.id) ? { ...n, x: n.x + event.dx, y: n.y + event.dy } : n
+                        )
+                    }));
+                } else {
+                    // Single-node drag
+                    updateNodePosition(d.id, event.x, event.y);
+                }
             })
             .on('end', (event) => {
                 if (dragOccurred.current) {
@@ -282,13 +344,21 @@ export const useMapInteraction = ({
                     event.sourceEvent.stopPropagation();
                     (window as any).__mapDragEndTime = Date.now();
                 }
+                dragStartPositions.current.clear();
             });
         
         svg.select<SVGGElement>('#map-content-group')
             .selectAll<SVGGElement, MapNode>('g.map-node')
             .call(dragBehavior);
         
-    }, [nodes, resizingState, updateNodePosition, setSelectedNodeId, uiState, svgRef]);
+        const svgEl = svgRef.current;
+        return () => {
+             if (svgEl) {
+                svgEl.removeEventListener('pointermove', handlePointerMoveEvent);
+            }
+        }
+        
+    }, [nodes, resizingState, regionSelectedNodeIds, setLayout, setRegionSelectedNodeIds, setSelectedNodeId, uiState, updateNodePosition, svgRef, notesToPlace, setDropTargetNodeId]);
 
     const handleDrop = (e: React.DragEvent<SVGSVGElement>) => {
         e.preventDefault();
