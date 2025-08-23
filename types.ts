@@ -1,24 +1,5 @@
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export interface RawNode {
   id: number;
   name: string;
@@ -212,7 +193,8 @@ export type ProjectActivityType =
   | 'ADD_NOTE_TO_MAP'
   | 'SOCRATIC_ACTION_TAKEN'
   | 'SOCRATIC_SUGGESTION_TRIGGERED'
-  | 'ANALYZE_RESEARCH_TRENDS';
+  | 'ANALYZE_RESEARCH_TRENDS'
+  | 'VOICE_NOTE';
 
 export interface ProjectActivity {
   id: string;

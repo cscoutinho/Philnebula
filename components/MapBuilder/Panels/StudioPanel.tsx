@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI, Type, Chat } from '@google/genai';
 import type { ProjectActivityType, KindleNote, UserNote } from '../../../types';
-import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2 } from '../../icons';
+import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon } from '../../icons';
 
 const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boolean) => void, () => void, () => void, boolean, boolean] => {
     const [history, setHistory] = useState<T[]>([initialState]);
@@ -698,6 +698,8 @@ Text: "${analysisText}"`;
                             onDelete={handleDeleteNote}
                             onCancel={() => setEditingNoteId(null)}
                             onAiSelection={handleAiSelection}
+                            ai={ai}
+                            logActivity={logActivity}
                         />
                     ) : (
                         <div className="flex-grow flex flex-col items-center justify-center text-center text-gray-500 p-4">
@@ -725,12 +727,123 @@ const EditableNoteCard: React.FC<{
     onDelete: (id: string) => void;
     onCancel: () => void;
     onAiSelection: () => void;
-}> = ({ note, onSave, onDelete, onCancel, onAiSelection }) => {
+    ai: GoogleGenAI;
+    logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
+}> = ({ note, onSave, onDelete, onCancel, onAiSelection, ai, logActivity }) => {
     const [title, setTitle] = useState(note.title);
     const [content, setContent, undo, redo, canUndo, canRedo] = useHistoryState(note.content);
     const editorRef = useRef<HTMLDivElement>(null);
     const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
     const [isFontSizePickerOpen, setIsFontSizePickerOpen] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+
+    const blobToBase64 = (blob: Blob): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                if (typeof reader.result !== 'string') {
+                    return reject(new Error("FileReader result is not a string"));
+                }
+                const base64String = reader.result.split(',')[1];
+                resolve(base64String);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    };
+
+    const handleStopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
+        }
+    };
+
+    const handleStartRecording = async () => {
+        setTranscriptionError(null);
+        if (isRecording) {
+            handleStopRecording();
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                audioChunksRef.current.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                setIsRecording(false);
+                setIsTranscribing(true);
+                setTranscriptionError(null);
+                
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+                try {
+                    const base64Audio = await blobToBase64(audioBlob);
+                    
+                    const audioPart = {
+                        inlineData: {
+                            mimeType: audioBlob.type,
+                            data: base64Audio,
+                        },
+                    };
+                    
+                    const textPart = { text: "Transcribe this audio recording precisely and accurately." };
+
+                    const response = await ai.models.generateContent({
+                      model: 'gemini-2.5-flash',
+                      contents: { parts: [audioPart, textPart] },
+                    });
+                    
+                    const transcription = response.text;
+                    
+                    if (transcription && editorRef.current) {
+                        const editor = editorRef.current;
+                        editor.focus();
+
+                        // Move cursor to the end of the editor
+                        const selection = window.getSelection();
+                        if (selection) {
+                            const range = document.createRange();
+                            range.selectNodeContents(editor);
+                            range.collapse(false); // collapse to the end
+                            selection.removeAllRanges();
+                            selection.addRange(range);
+                        }
+                        
+                        // Always insert as a new paragraph. If the editor is empty, this will be the first one.
+                        // If not, it will be appended at the end because we moved the cursor.
+                        const contentToInsert = `<p>${transcription}</p>`;
+
+                        document.execCommand('insertHTML', false, contentToInsert);
+                        setContent(editor.innerHTML, true);
+                    }
+                    logActivity('VOICE_NOTE', { nodeName: note.title });
+
+                } catch (err) {
+                    console.error("Transcription failed:", err);
+                    setTranscriptionError("Failed to transcribe audio. Please try again.");
+                } finally {
+                    setIsTranscribing(false);
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            };
+            
+            mediaRecorder.start();
+            setIsRecording(true);
+        } catch (err) {
+            console.error("Error accessing microphone:", err);
+            setTranscriptionError("Could not access microphone. Please check permissions.");
+        }
+    };
 
     const handleExecCommand = useCallback((command: string, value?: string) => {
         editorRef.current?.focus();
@@ -782,20 +895,36 @@ const EditableNoteCard: React.FC<{
                         </div>
                     )}
                 </div>
+                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
+                <button
+                    onClick={handleStartRecording}
+                    disabled={isTranscribing}
+                    className={`p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-wait flex items-center gap-1.5 text-sm ${isRecording ? 'text-red-400' : ''}`}
+                    title={isRecording ? "Stop Recording" : "Start Voice Note"}
+                >
+                    {isTranscribing ? (
+                        <RefreshCw className="w-4 h-4 animate-spin"/>
+                    ) : isRecording ? (
+                        <StopCircleIcon className="w-4 h-4"/>
+                    ) : (
+                        <MicrophoneIcon className="w-4 h-4"/>
+                    )}
+                    {isTranscribing ? 'Transcribing...' : isRecording ? 'Recording...' : null}
+                </button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
                 <button onClick={onAiSelection} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1.5 text-sm" title="Ask AI to edit selected text">
                     <SparkleIcon className="w-4 h-4 text-purple-400"/>
                     Ask AI
                 </button>
             </div>
+            {transcriptionError && <div className="text-xs text-red-400 px-4 py-1 bg-red-900/50 flex-shrink-0">{transcriptionError}</div>}
             <div className="flex-grow p-4 overflow-y-auto" data-note-id={note.id} onClick={() => editorRef.current?.focus()}>
                 <div
                     ref={editorRef}
                     contentEditable={true}
-                    onInput={(e) => setContent(e.currentTarget.innerHTML)}
+                    onInput={(e) => setContent(e.currentTarget.innerHTML, true)}
                     suppressContentEditableWarning={true}
                     className="w-full h-full bg-transparent text-gray-200 outline-none resize-none leading-relaxed prose prose-invert prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: content }}
                 />
             </div>
              <div className="flex-shrink-0 p-2 border-t border-gray-700 flex justify-between items-center bg-gray-800/50">
