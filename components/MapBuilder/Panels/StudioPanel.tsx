@@ -63,7 +63,8 @@ interface StudioPanelProps {
     // Context for AI assistant
     allProjectNotes: (UserNote & { mapNodeId: string | number; mapNodeName: string; })[];
     allProjectTags: AppTag[];
-    onNavigateToNexusNote: (userNoteId: string) => void;
+    onUpdateTags: (tags: AppTag[]) => void;
+    onNavigateToNexusTag: (tagId: string) => void;
 }
 
 
@@ -693,10 +694,10 @@ Text: "${analysisText}"`;
                                 } else {
                                     onLogEdit(state.nodeId, title);
                                 }
-                                setEditingNoteId(null);
+                                onClose();
                             }}
                             onDelete={handleDeleteNote}
-                            onCancel={() => setEditingNoteId(null)}
+                            onCancel={onClose}
                             onAiSelection={handleAiSelection}
                             ai={ai}
                             logActivity={logActivity}
@@ -937,7 +938,7 @@ const EditableNoteCard: React.FC<{
                 <div
                     ref={editorRef}
                     contentEditable={true}
-                    onInput={(e) => setContent(e.currentTarget.innerHTML, true)}
+                    onInput={(e) => setContent(e.currentTarget.innerHTML)}
                     suppressContentEditableWarning={true}
                     className="w-full h-full bg-transparent text-gray-200 outline-none resize-none leading-relaxed prose prose-invert prose-sm max-w-none"
                 />
@@ -946,7 +947,7 @@ const EditableNoteCard: React.FC<{
                 <button onClick={() => onDelete(note.id)} className="p-2 text-gray-400 hover:text-red-400 rounded-md"><Trash2 className="w-4 h-4"/></button>
                 <div className="flex gap-2">
                     <button onClick={onCancel} className="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">Cancel</button>
-                    <button onClick={() => onSave(note.id, title, content)} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-md">Save & Close Note</button>
+                    <button onClick={() => onSave(note.id, title, editorRef.current?.innerHTML || content)} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-md">Save & Close Note</button>
                 </div>
             </div>
         </div>

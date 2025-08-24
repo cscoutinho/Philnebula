@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { parseMarkdown, flattenData } from './services/dataParser';
@@ -94,6 +95,34 @@ const defaultRelationshipTypes = [
 const SUPABASE_URL = 'https://kowbxomppzqgmfagzirc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtvd2J4b21wcHpxZ21mYWd6aXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyOTI1MTMsImV4cCI6MjA2ODg2ODUxM30.3R92DVk_HPQBtGc4V3stf7UWQxMeNeazXdZEj_BZdk0';
 
+const cleanupOrphanedTags = (projectData: AppSessionData): AppSessionData => {
+    const allNotes: UserNote[] = [];
+    projectData.maps.forEach(map => {
+        map.layout.nodes.forEach(node => {
+            if (node.userNotes) {
+                allNotes.push(...node.userNotes);
+            }
+        });
+    });
+
+    const usedTagIds = new Set<string>();
+    allNotes.forEach(note => {
+        note.tagIds?.forEach(tagId => {
+            usedTagIds.add(tagId);
+        });
+    });
+
+    const existingTags = projectData.tags || [];
+    const cleanedTags = existingTags.filter(tag => usedTagIds.has(tag.id));
+
+    if (existingTags.length === cleanedTags.length) {
+        return projectData;
+    }
+
+    return { ...projectData, tags: cleanedTags };
+};
+
+
 const App: React.FC = () => {
     // Core Data
     const [data, setData] = useState<{ nodes: D3Node[], links: D3Link[] } | null>(null);
@@ -162,6 +191,7 @@ const App: React.FC = () => {
     const [initialWorkbenchData, setInitialWorkbenchData] = useState<any>(null);
     const [notesToPlace, setNotesToPlace] = useState<KindleNote[] | null>(null);
     const [nexusFocusNoteId, setNexusFocusNoteId] = useState<string | null>(null);
+    const [nexusFilterTagId, setNexusFilterTagId] = useState<string | null>(null);
 
     // Unified Studio Panel State
     type StudioState = {
@@ -374,6 +404,12 @@ const App: React.FC = () => {
         setCurrentView('nexus');
     }, []);
 
+    const handleNavigateToNexusTag = useCallback((tagId: string) => {
+        setStudioState(null);
+        setNexusFilterTagId(tagId);
+        setCurrentView('nexus');
+    }, []);
+
     // --- Research Analysis Handler ---
     const handleAnalyzeResearchTrends = useCallback(async (feed: TrackedFeed) => {
         setIsResearchAnalysisOpen(true);
@@ -416,36 +452,82 @@ const App: React.FC = () => {
     }, [ai, logActivity]);
     
     const handleUpdateUserNotesForMapNode = useCallback((mapNodeId: string | number, userNotes: UserNote[]) => {
-        updateActiveProjectData(d => ({
-            ...d,
-            maps: d.maps.map(m => ({
-                ...m,
-                layout: {
-                    ...m.layout,
-                    nodes: m.layout.nodes.map(n => {
-                        if (n.id === mapNodeId) {
-                            return { ...n, userNotes };
-                        }
-                        return n;
-                    })
-                }
-            }))
-        }));
+        updateActiveProjectData(d => {
+            const updatedData = {
+                ...d,
+                maps: d.maps.map(m => ({
+                    ...m,
+                    layout: {
+                        ...m.layout,
+                        nodes: m.layout.nodes.map(n => {
+                            if (n.id === mapNodeId) {
+                                return { ...n, userNotes };
+                            }
+                            return n;
+                        })
+                    }
+                }))
+            };
+            return cleanupOrphanedTags(updatedData);
+        });
     }, [updateActiveProjectData]);
 
     const handleUpdateUserNote = useCallback((updatedNote: UserNote) => {
         updateActiveProjectData(d => {
+            // Parse content for tags
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = updatedNote.content;
+            const contentText = tempDiv.textContent || "";
+            
+            const hashtagRegex = /#([a-zA-Z0-9_][a-zA-Z0-9_-]*)/g;
+            const foundTagNames = new Set<string>();
+            let match;
+            while ((match = hashtagRegex.exec(contentText)) !== null) {
+                foundTagNames.add(match[1]);
+            }
+    
+            let projectTags = [...(d.tags || [])];
+            const newTagsToAdd: AppTag[] = [];
+            const finalNoteTagIds = new Set<string>();
+    
+            // Process found tags
+            foundTagNames.forEach(tagName => {
+                const normalizedTagName = tagName.toLowerCase();
+                let existingTag = projectTags.find(t => t.name.toLowerCase() === normalizedTagName);
+                
+                if (!existingTag) {
+                    // Create new tag if it doesn't exist
+                    const newTag: AppTag = {
+                        id: `tag_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                        name: tagName,
+                        color: '#6366f1', // Standard default color (indigo-500)
+                    };
+                    newTagsToAdd.push(newTag);
+                    finalNoteTagIds.add(newTag.id);
+                } else {
+                    finalNoteTagIds.add(existingTag.id);
+                }
+            });
+            
+            const finalProjectTags = [...projectTags, ...newTagsToAdd];
+            const finalUpdatedNote = { ...updatedNote, tagIds: Array.from(finalNoteTagIds) };
+    
+            // Update project data with the modified note and possibly new tags
             const newMaps = d.maps.map(m => ({
                 ...m,
                 layout: {
                     ...m.layout,
                     nodes: m.layout.nodes.map(n => ({
                         ...n,
-                        userNotes: (n.userNotes || []).map(un => un.id === updatedNote.id ? updatedNote : un)
+                        userNotes: (n.userNotes || []).map(un => 
+                            un.id === finalUpdatedNote.id ? finalUpdatedNote : un
+                        )
                     }))
                 }
             }));
-            return { ...d, maps: newMaps };
+    
+            const projectWithUpdatedNoteAndTags = { ...d, maps: newMaps, tags: finalProjectTags };
+            return cleanupOrphanedTags(projectWithUpdatedNoteAndTags);
         });
     }, [updateActiveProjectData]);
 
@@ -892,8 +974,17 @@ const App: React.FC = () => {
                         onOpenStudioForNexusNote={handleOpenStudioForNexusNote}
                         focusNoteId={nexusFocusNoteId}
                         onClearFocusNote={() => setNexusFocusNoteId(null)}
+                        focusTagId={nexusFilterTagId}
+                        onClearFocusTag={() => setNexusFilterTagId(null)}
                         onUpdateNexusLayout={handleUpdateNexusLayout}
                         onUpdateTags={handleUpdateTags}
+                        session={session}
+                        activeProject={activeProject}
+                        onCreateProject={handleCreateProject}
+                        onSwitchProject={handleSwitchProject}
+                        onDeleteProject={handleDeleteProject}
+                        onRenameProject={handleRenameProject}
+                        onRequestConfirmation={requestConfirmation}
                     />
                 );
             default: return null;
@@ -954,15 +1045,17 @@ const App: React.FC = () => {
                             )}
                         </div>
                     )}
-                     <ProjectSwitcher
-                        projects={session.projects}
-                        activeProject={activeProject}
-                        onCreateProject={handleCreateProject}
-                        onSwitchProject={handleSwitchProject}
-                        onDeleteProject={handleDeleteProject}
-                        onRenameProject={handleRenameProject}
-                        onRequestConfirmation={requestConfirmation}
-                    />
+                    {currentView !== 'nexus' && (
+                        <ProjectSwitcher
+                            projects={session.projects}
+                            activeProject={activeProject}
+                            onCreateProject={handleCreateProject}
+                            onSwitchProject={handleSwitchProject}
+                            onDeleteProject={handleDeleteProject}
+                            onRenameProject={handleRenameProject}
+                            onRequestConfirmation={requestConfirmation}
+                        />
+                    )}
                     {currentView === 'map' && activeProjectData && (
                         <MapSwitcher
                             maps={activeProjectData.maps}
@@ -1039,7 +1132,8 @@ const App: React.FC = () => {
                     allProjectNotes={[]}
                     allProjectTags={[]}
                     onUpdateUserNote={() => {}}
-                    onNavigateToNexusNote={() => {}}
+                    onUpdateTags={() => {}}
+                    onNavigateToNexusTag={() => {}}
                 />
             )}
 
@@ -1064,7 +1158,8 @@ const App: React.FC = () => {
                         ai={ai}
                         allProjectNotes={allUserNotesWithNodeInfo}
                         allProjectTags={activeProjectData.tags || []}
-                        onNavigateToNexusNote={handleNavigateToNexusNote}
+                        onUpdateTags={handleUpdateTags}
+                        onNavigateToNexusTag={handleNavigateToNexusTag}
                     />
                 );
             })()}
@@ -1086,7 +1181,8 @@ const App: React.FC = () => {
                     ai={ai}
                     allProjectNotes={allUserNotesWithNodeInfo}
                     allProjectTags={activeProjectData.tags || []}
-                    onNavigateToNexusNote={handleNavigateToNexusNote}
+                    onUpdateTags={handleUpdateTags}
+                    onNavigateToNexusTag={handleNavigateToNexusTag}
                 />
             )}
 
