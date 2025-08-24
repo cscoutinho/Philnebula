@@ -31,7 +31,6 @@ export const useMapUI = ({ allNodes, layout, setLayout, logActivity, nodeMap, on
     const [logicalWorkbench, setLogicalWorkbench] = useState<LogicalWorkbenchState | null>(null);
     const [isLogicVizVisible, setIsLogicVizVisible] = useState(false);
     const [colorPicker, setColorPicker] = useState<ColorPickerState | null>(null);
-    const [studioState, setStudioState] = useState<{ nodeId: string | number; x: number; y: number } | null>(null);
 
     const clearSelections = useCallback(() => {
         setNodeContextMenu(null);
@@ -45,10 +44,9 @@ export const useMapUI = ({ allNodes, layout, setLayout, logActivity, nodeMap, on
         setColorPicker(null);
         if (linkingNode) setLinkingNode(null);
         if (relationshipMenu) setRelationshipMenu(null);
-        if (studioState) setStudioState(null);
         if (editLinkTypesMenu) setEditLinkTypesMenu(null);
         if (changingNodeState) setChangingNodeState(null);
-    }, [linkingNode, relationshipMenu, editLinkTypesMenu, changingNodeState, studioState]);
+    }, [linkingNode, relationshipMenu, editLinkTypesMenu, changingNodeState]);
 
     const handleChangeConceptSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const query = e.target.value;
@@ -408,7 +406,6 @@ export const useMapUI = ({ allNodes, layout, setLayout, logActivity, nodeMap, on
         logicalWorkbench, setLogicalWorkbench,
         isLogicVizVisible, setIsLogicVizVisible,
         colorPicker, setColorPicker,
-        studioState, setStudioState,
         clearSelections,
         handleChangeConceptSearch,
         handleConceptChangeSelect,

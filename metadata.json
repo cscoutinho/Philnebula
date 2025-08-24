@@ -1,5 +1,5 @@
 {
-  "name": "PhilPapers Interactive Nebula (Gemini)",
+  "name": "Copy of PhilPapers Interactive Nebula (Gemini)",
   "description": "An interactive force-directed graph visualization of the PhilPapers taxonomy, allowing users to explore philosophical categories, find AI-discovered connections, and build their own conceptual maps.",
   "requestFramePermissions": [
     "microphone"

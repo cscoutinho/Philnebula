@@ -1,13 +1,9 @@
 
 
-
-
-
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { parseMarkdown, flattenData } from './services/dataParser';
-import { D3Node, D3Link, Publication, CustomRelationshipType, MapNode, KindleNote, ImportedNoteSource, ConfirmationRequestHandler, ConceptualMap, UserNote, TrackedFeed, ResearchAnalysisData } from './types';
+import { D3Node, D3Link, Publication, CustomRelationshipType, MapNode, KindleNote, ImportedNoteSource, ConfirmationRequestHandler, ConceptualMap, UserNote, TrackedFeed, ResearchAnalysisData, AppTag, AppSessionData } from './types';
 import NebulaGraph from './components/NebulaGraph';
 import InfoPanel from './components/InfoPanel';
 import SearchInput from './components/SearchInput';
@@ -29,6 +25,7 @@ import { useNebula } from './hooks/useNebula';
 import { useBeliefFlipChallenge } from './hooks/useBeliefFlipChallenge';
 import StudioPanel from './components/MapBuilder/Panels/StudioPanel';
 import NotesInbox from './components/NotesInbox';
+import NexusView from './components/NexusView';
 import * as mapBuilderService from './services/mapBuilderService';
 import * as feedService from './services/feedService';
 
@@ -157,15 +154,25 @@ const App: React.FC = () => {
     );
 
     // View Management
-    const [currentView, setCurrentView] = useState<'nebula' | 'map' | 'feed'>('nebula');
+    const [currentView, setCurrentView] = useState<'nebula' | 'map' | 'feed' | 'nexus'>('nebula');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isDiaryOpen, setIsDiaryOpen] = useState(false);
     const [isNotesInboxOpen, setIsNotesInboxOpen] = useState(false);
-    const [isArgumentStudioOpen, setIsArgumentStudioOpen] = useState(false);
     const [isChallengeOpen, setIsChallengeOpen] = useState(false);
     const [initialWorkbenchData, setInitialWorkbenchData] = useState<any>(null);
     const [notesToPlace, setNotesToPlace] = useState<KindleNote[] | null>(null);
+    const [nexusFocusNoteId, setNexusFocusNoteId] = useState<string | null>(null);
 
+    // Unified Studio Panel State
+    type StudioState = {
+        mode: 'map' | 'nexus' | 'analysis';
+        mapNodeId?: string | number;
+        userNoteId?: string;
+        x: number;
+        y: number;
+    };
+    const [studioState, setStudioState] = useState<StudioState | null>(null);
+    
     // Research Analysis State
     const [isResearchAnalysisOpen, setIsResearchAnalysisOpen] = useState(false);
     const [researchAnalysisData, setResearchAnalysisData] = useState<ResearchAnalysisData | null>(null);
@@ -213,6 +220,21 @@ const App: React.FC = () => {
     const activeMapLayout = useMemo(() => {
         return activeMap ? activeMap.layout : { nodes: [], links: [], logicalConstructs: [] };
     }, [activeMap]);
+
+    const allUserNotesWithNodeInfo = useMemo(() => {
+        if (!activeProjectData) return [];
+        const notes: (UserNote & { mapNodeId: string | number, mapNodeName: string })[] = [];
+        activeProjectData.maps.forEach(map => {
+            map.layout.nodes.forEach(node => {
+                if (node.userNotes) {
+                    node.userNotes.forEach(un => {
+                        notes.push({ ...un, mapNodeId: node.id, mapNodeName: node.name });
+                    });
+                }
+            });
+        });
+        return notes;
+    }, [activeProjectData]);
 
     const allRelationshipTypes = useMemo(() => {
         const disabledDefaults = new Set(session.disabledDefaultTypes || []);
@@ -318,6 +340,39 @@ const App: React.FC = () => {
             };
         });
     }, [updateActiveProjectData]);
+    
+    // --- Studio Handlers ---
+    const handleOpenStudioForMapNode = useCallback((nodeId: string | number, x: number, y: number) => {
+        setStudioState({
+            mode: 'map',
+            mapNodeId: nodeId,
+            x: x,
+            y: y,
+        });
+    }, []);
+
+    const handleOpenStudioForNexusNote = useCallback((userNoteId: string, x: number, y: number) => {
+        setStudioState({
+            mode: 'nexus',
+            userNoteId,
+            x,
+            y,
+        });
+    }, []);
+
+    // --- Nexus Handlers ---
+    const handleUpdateNexusLayout = useCallback((updater: (layout: AppSessionData['nexusLayout']) => AppSessionData['nexusLayout']) => {
+        updateActiveProjectData(d => ({
+            ...d,
+            nexusLayout: updater(d.nexusLayout || { notePositions: [], links: [] }),
+        }));
+    }, [updateActiveProjectData]);
+
+    const handleNavigateToNexusNote = useCallback((userNoteId: string) => {
+        setStudioState(null); // Close studio if open
+        setNexusFocusNoteId(userNoteId);
+        setCurrentView('nexus');
+    }, []);
 
     // --- Research Analysis Handler ---
     const handleAnalyzeResearchTrends = useCallback(async (feed: TrackedFeed) => {
@@ -359,6 +414,44 @@ const App: React.FC = () => {
             setResearchAnalysisLoadingState('error');
         }
     }, [ai, logActivity]);
+    
+    const handleUpdateUserNotesForMapNode = useCallback((mapNodeId: string | number, userNotes: UserNote[]) => {
+        updateActiveProjectData(d => ({
+            ...d,
+            maps: d.maps.map(m => ({
+                ...m,
+                layout: {
+                    ...m.layout,
+                    nodes: m.layout.nodes.map(n => {
+                        if (n.id === mapNodeId) {
+                            return { ...n, userNotes };
+                        }
+                        return n;
+                    })
+                }
+            }))
+        }));
+    }, [updateActiveProjectData]);
+
+    const handleUpdateUserNote = useCallback((updatedNote: UserNote) => {
+        updateActiveProjectData(d => {
+            const newMaps = d.maps.map(m => ({
+                ...m,
+                layout: {
+                    ...m.layout,
+                    nodes: m.layout.nodes.map(n => ({
+                        ...n,
+                        userNotes: (n.userNotes || []).map(un => un.id === updatedNote.id ? updatedNote : un)
+                    }))
+                }
+            }));
+            return { ...d, maps: newMaps };
+        });
+    }, [updateActiveProjectData]);
+
+    const handleUpdateTags = useCallback((tags: AppTag[]) => {
+        updateActiveProjectData(d => ({ ...d, tags }));
+    }, [updateActiveProjectData]);
 
     // --- Other Handlers ---
     const handleUpdateCustomRelationshipTypes = useCallback((updater: (currentTypes: CustomRelationshipType[]) => CustomRelationshipType[]) => {
@@ -561,7 +654,7 @@ const App: React.FC = () => {
     }, [activeProject, activeMap, activeMapLayout]);
 
     const handleDeconstructArgument = (deconstruction: { premises: string[], conclusion: string }) => {
-        setIsArgumentStudioOpen(false);
+        setStudioState(null);
         setInitialWorkbenchData({
             deconstructed: deconstruction,
             mode: 'text-to-map'
@@ -773,6 +866,7 @@ const App: React.FC = () => {
                         onRequestConfirmation={requestConfirmation}
                         notesToPlace={notesToPlace}
                         onClearNotesToPlace={handleClearNotesToPlace}
+                        onOpenStudio={handleOpenStudioForMapNode}
                     />
                 );
             case 'feed':
@@ -789,9 +883,28 @@ const App: React.FC = () => {
                         onAnalyzeResearch={handleAnalyzeResearchTrends}
                     />
                 );
+            case 'nexus':
+                return (
+                    <NexusView
+                        allUserNotes={allUserNotesWithNodeInfo}
+                        activeProjectData={activeProjectData}
+                        updateActiveProjectData={updateActiveProjectData}
+                        onOpenStudioForNexusNote={handleOpenStudioForNexusNote}
+                        focusNoteId={nexusFocusNoteId}
+                        onClearFocusNote={() => setNexusFocusNoteId(null)}
+                        onUpdateNexusLayout={handleUpdateNexusLayout}
+                        onUpdateTags={handleUpdateTags}
+                    />
+                );
             default: return null;
         }
     };
+    
+    const studioUserNote = useMemo(() => {
+        if (studioState?.mode !== 'nexus' || !studioState.userNoteId) return null;
+        return allUserNotesWithNodeInfo.find(un => un.id === studioState.userNoteId) || null;
+    }, [studioState, allUserNotesWithNodeInfo]);
+
 
     return (
         <div className="relative w-screen h-screen overflow-hidden bg-black text-white">
@@ -875,7 +988,7 @@ const App: React.FC = () => {
                         <DiaryIcon className="w-5 h-5" />
                     </button>
                     {currentView === 'map' && (
-                        <button onClick={() => setIsArgumentStudioOpen(true)} className="p-2.5 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-cyan-500" aria-label="Analyze Argument from Text">
+                        <button onClick={() => setStudioState({ mode: 'analysis', x: window.innerWidth / 2, y: window.innerHeight / 2 })} className="p-2.5 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-cyan-500" aria-label="Analyze Argument from Text">
                             <FlaskConicalIcon className="w-5 h-5" />
                         </button>
                     )}
@@ -903,7 +1016,7 @@ const App: React.FC = () => {
                 />
             )}
 
-            {currentView !== 'feed' && (
+            {currentView !== 'feed' && currentView !== 'nexus' && (
                  <MapTray 
                     concepts={mapTrayConcepts} 
                     onRemove={handleRemoveFromMapTray} 
@@ -911,21 +1024,72 @@ const App: React.FC = () => {
                  />
             )}
             
-            {isArgumentStudioOpen && (
+            {studioState && studioState.mode === 'analysis' && (
                  <StudioPanel
                     analysisMode={true}
-                    onClose={() => setIsArgumentStudioOpen(false)}
+                    onClose={() => setStudioState(null)}
                     onDeconstruct={handleDeconstructArgument}
                     ai={ai}
-                    // Props for note-taking mode, not used in analysis mode
                     state={{ nodeId: '', x: window.innerWidth / 2, y: window.innerHeight / 2 }}
-                    initialUserNotes={[]}
                     nodeName=""
-                    onUpdateUserNotes={() => {}}
-                    onLogEdit={() => {}}
                     logActivity={logActivity}
+                    userNotes={[]}
+                    onLogEdit={() => {}}
+                    activeUserNote={null}
+                    allProjectNotes={[]}
+                    allProjectTags={[]}
+                    onUpdateUserNote={() => {}}
+                    onNavigateToNexusNote={() => {}}
                 />
             )}
+
+            {studioState && studioState.mode === 'map' && activeMap && (() => {
+                const node = activeMap.layout.nodes.find(n => n.id === studioState.mapNodeId);
+                if (!node) return null;
+                return (
+                    <StudioPanel
+                        state={{ nodeId: node.id, x: studioState.x, y: studioState.y }}
+                        activeUserNote={null}
+                        userNotes={node.userNotes || []}
+                        nodeName={node.name}
+                        onClose={() => setStudioState(null)}
+                        onUpdateUserNotesForMapNode={handleUpdateUserNotesForMapNode}
+                        onUpdateUserNote={handleUpdateUserNote}
+                        onLogEdit={(nodeId, noteTitle) => logActivity('EDIT_NOTE', {
+                            conceptId: nodeId,
+                            conceptName: node.name,
+                            noteTitle: noteTitle
+                        })}
+                        logActivity={logActivity}
+                        ai={ai}
+                        allProjectNotes={allUserNotesWithNodeInfo}
+                        allProjectTags={activeProjectData.tags || []}
+                        onNavigateToNexusNote={handleNavigateToNexusNote}
+                    />
+                );
+            })()}
+
+            {studioState && studioState.mode === 'nexus' && studioUserNote && (
+                <StudioPanel
+                    state={{ nodeId: studioUserNote.mapNodeId, x: studioState.x, y: studioState.y }}
+                    activeUserNote={studioUserNote}
+                    userNotes={[studioUserNote]}
+                    nodeName={studioUserNote.mapNodeName}
+                    onClose={() => setStudioState(null)}
+                    onUpdateUserNote={handleUpdateUserNote}
+                    onLogEdit={(nodeId, noteTitle) => logActivity('EDIT_NOTE', {
+                        conceptId: nodeId,
+                        conceptName: studioUserNote.mapNodeName,
+                        noteTitle: noteTitle
+                    })}
+                    logActivity={logActivity}
+                    ai={ai}
+                    allProjectNotes={allUserNotesWithNodeInfo}
+                    allProjectTags={activeProjectData.tags || []}
+                    onNavigateToNexusNote={handleNavigateToNexusNote}
+                />
+            )}
+
 
             {currentView === 'map' && activeMapLayout.nodes.length === 0 && (
                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-gray-400 pointer-events-none z-0">

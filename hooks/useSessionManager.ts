@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { MultiProjectSession, Project, AppSessionData, MapLink, ProjectActivityType, ProjectActivity, ImportedNoteSource, ConceptualMap, UserNote } from '../types';
 
-const MULTI_PROJECT_SESSION_VERSION = 13;
+const MULTI_PROJECT_SESSION_VERSION = 14;
 
 const createNewProject = (name: string): Project => {
     const defaultMapId = `map_${Date.now()}`;
@@ -18,6 +18,8 @@ const createNewProject = (name: string): Project => {
             beliefFlipChallenges: [],
             importedNoteSources: [],
             processedNoteIds: [],
+            tags: [],
+            nexusLayout: { notePositions: [], links: [] },
         },
     };
 };
@@ -117,6 +119,19 @@ const loadInitialSession = (): MultiProjectSession => {
                         });
                     }
 
+                    // Version 14 migration (Nexus view)
+                    if (!p.data.tags) { p.data.tags = []; }
+                    if (!p.data.nexusLayout) { p.data.nexusLayout = { notePositions: [], links: [] }; }
+                    p.data.maps?.forEach(map => {
+                        map.layout.nodes.forEach(node => {
+                            node.userNotes?.forEach(un => {
+                                if (!un.tagIds) {
+                                    un.tagIds = [];
+                                }
+                            });
+                        });
+                    });
+
                  });
                  if (!savedSession.customRelationshipTypes) { savedSession.customRelationshipTypes = []; }
                  if (!savedSession.disabledDefaultTypes) { savedSession.disabledDefaultTypes = []; }
@@ -146,6 +161,9 @@ const loadInitialSession = (): MultiProjectSession => {
                     if (!p.data.activeMapId && p.data.maps.length > 0) {
                         p.data.activeMapId = p.data.maps[0].id;
                     }
+                    // Version 14 check for existing data
+                    if (!p.data.tags) { p.data.tags = []; }
+                    if (!p.data.nexusLayout) { p.data.nexusLayout = { notePositions: [], links: [] }; }
                 });
                 
                 if (!savedSession.customRelationshipTypes) { savedSession.customRelationshipTypes = []; }
@@ -191,6 +209,8 @@ const loadInitialSession = (): MultiProjectSession => {
         beliefFlipChallenges: [],
         importedNoteSources: [],
         processedNoteIds: [],
+        tags: [],
+        nexusLayout: { notePositions: [], links: [] },
     };
     
     return {

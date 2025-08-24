@@ -1,3 +1,4 @@
+
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import type { D3Node, Citation, MapLink, MapBuilderProps, FloatingTooltipState, LogicalWorkbenchState, RelationshipTypeInfo, BeliefConfirmationState, KindleNote, ConfirmationRequestHandler, UserNote } from '../../types';
@@ -146,6 +147,7 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
     onRequestConfirmation,
     notesToPlace,
     onClearNotesToPlace,
+    onOpenStudio,
 }) => {
     const { nodes, links } = layout;
     const ai = useMemo(() => new GoogleGenAI({ apiKey: process.env.API_KEY! }), []);
@@ -277,19 +279,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
         beliefChallenge.startChallenge(belief, confidence, sourceNodeIds);
     }, [beliefChallenge, setIsChallengeOpen, beliefConfirmationState]);
 
-    const handleUpdateUserNotes = useCallback((nodeId: string | number, userNotes: UserNote[]) => {
-        setLayout(prev => ({
-            ...prev,
-            nodes: prev.nodes.map(n => {
-                if (n.id === nodeId) {
-                    const { notes, ...rest } = n as any; 
-                    return { ...rest, userNotes };
-                }
-                return n;
-            })
-        }));
-    }, [setLayout]);
-
     return (
         <div className="w-full h-full relative">
             <MapCanvas
@@ -321,7 +310,7 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
                 setZoomLevel={ui.setZoomLevel}
             />
             
-            {ui.nodeContextMenu && <div ref={nodeContextMenuRef} style={nodeContextMenuStyle}><NodeContextMenu nodeContextMenu={ui.nodeContextMenu} node={nodeMap.get(ui.nodeContextMenu.nodeId)} isAnalyzingGenealogy={aiHooks.isAnalyzingGenealogy === ui.nodeContextMenu.nodeId} setLinkingNode={ui.setLinkingNode} setNodeContextMenu={ui.setNodeContextMenu} handleAnalyzeGenealogy={aiHooks.handleAnalyzeGenealogy} setChangingNodeState={ui.setChangingNodeState} setColorPicker={ui.setColorPicker} updateNodeShape={ui.updateNodeShape} deleteNode={ui.deleteNode} onEditNote={(nodeId) => ui.setStudioState({ nodeId, x: ui.nodeContextMenu!.x, y: ui.nodeContextMenu!.y })} /></div>}
+            {ui.nodeContextMenu && <div ref={nodeContextMenuRef} style={nodeContextMenuStyle}><NodeContextMenu nodeContextMenu={ui.nodeContextMenu} node={nodeMap.get(ui.nodeContextMenu.nodeId)} isAnalyzingGenealogy={aiHooks.isAnalyzingGenealogy === ui.nodeContextMenu.nodeId} setLinkingNode={ui.setLinkingNode} setNodeContextMenu={ui.setNodeContextMenu} handleAnalyzeGenealogy={aiHooks.handleAnalyzeGenealogy} setChangingNodeState={ui.setChangingNodeState} setColorPicker={ui.setColorPicker} updateNodeShape={ui.updateNodeShape} deleteNode={ui.deleteNode} onEditNote={(nodeId) => { onOpenStudio(nodeId, ui.nodeContextMenu!.x, ui.nodeContextMenu!.y); ui.setNodeContextMenu(null); }} /></div>}
             {ui.colorPicker && <div ref={colorPickerRef} style={colorPickerStyle}><ColorPicker colorPicker={ui.colorPicker} textColors={ui.textColors} handleTextColorChange={ui.handleTextColorChange} /></div>}
             {ui.linkContextMenu && <div ref={linkContextMenuRef} style={linkContextMenuStyle}><LinkContextMenu linkContextMenu={ui.linkContextMenu} setLogicalWorkbench={ui.setLogicalWorkbench} handleFormalizeArgument={(state) => aiHooks.handleFormalizeArgument(state)} setLinkContextMenu={ui.setLinkContextMenu} setDialecticAnalysis={ui.setDialecticAnalysis} handleAnalyzeArgument={aiHooks.handleAnalyzeArgument} handleExploreImplications={aiHooks.handleExploreImplications} generateJustification={aiHooks.generateJustification} setEditLinkTypesMenu={ui.setEditLinkTypesMenu} updateLinkPathStyle={ui.updateLinkPathStyle} flipLinkCurve={ui.flipLinkCurve} deleteLink={ui.deleteLink} handleAnalyzeDefinition={aiHooks.handleAnalyzeDefinition} onChallengeBelief={(link, x, y) => setBeliefConfirmationState({ link, x, y })} handleGenerateCounterExample={aiHooks.handleGenerateCounterExample} handleGenerateAlternativeHypothesis={aiHooks.handleGenerateAlternativeHypothesis} /></div>}
             {ui.editLinkTypesMenu && (
@@ -400,19 +389,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
                         logActivity={logActivity}
                     />
                 </div>
-            )}
-             {ui.studioState && (
-                <StudioPanel
-                    analysisMode={false}
-                    state={ui.studioState}
-                    nodeName={nodeMap.get(ui.studioState.nodeId)?.name || ''}
-                    initialUserNotes={nodeMap.get(ui.studioState.nodeId)?.userNotes || []}
-                    onClose={() => ui.setStudioState(null)}
-                    onUpdateUserNotes={handleUpdateUserNotes}
-                    onLogEdit={ui.handleLogNoteEdit}
-                    logActivity={logActivity}
-                    ai={ai}
-                />
             )}
         </div>
     );

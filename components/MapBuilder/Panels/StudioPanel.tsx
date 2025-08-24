@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI, Type, Chat } from '@google/genai';
-import type { ProjectActivityType, KindleNote, UserNote } from '../../../types';
+import type { ProjectActivityType, KindleNote, UserNote, AppTag } from '../../../types';
 import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon } from '../../icons';
 
 const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boolean) => void, () => void, () => void, boolean, boolean] => {
@@ -43,15 +43,27 @@ const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boo
 
 interface StudioPanelProps {
     state: { nodeId: string | number; x: number; y: number };
-    initialUserNotes: UserNote[];
     nodeName: string;
     onClose: () => void;
-    onUpdateUserNotes: (nodeId: string | number, userNotes: UserNote[]) => void;
-    onLogEdit: (nodeId: string | number, noteTitle: string) => void;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
     ai: GoogleGenAI;
+    
+    // For analysis mode
     analysisMode?: boolean;
     onDeconstruct?: (result: { premises: string[], conclusion: string }) => void;
+    
+    // Note-related props
+    userNotes: UserNote[];
+    activeUserNote: (UserNote & { mapNodeId: string | number; mapNodeName: string; }) | null;
+    onUpdateUserNotesForMapNode?: (nodeId: string | number, userNotes: UserNote[]) => void;
+    onUpdateUserNote: (updatedNote: UserNote) => void;
+    
+    onLogEdit: (nodeId: string | number, noteTitle: string) => void;
+
+    // Context for AI assistant
+    allProjectNotes: (UserNote & { mapNodeId: string | number; mapNodeName: string; })[];
+    allProjectTags: AppTag[];
+    onNavigateToNexusNote: (userNoteId: string) => void;
 }
 
 
@@ -135,15 +147,17 @@ const AI_SYSTEM_INSTRUCTION = "You are a versatile AI research and writing assis
 
 const StudioPanel: React.FC<StudioPanelProps> = ({ 
     state, 
-    initialUserNotes, 
+    userNotes: initialUserNotes,
     nodeName, 
     onClose, 
-    onUpdateUserNotes, 
+    onUpdateUserNotesForMapNode,
+    onUpdateUserNote,
     onLogEdit, 
     logActivity,
     ai,
     analysisMode = false,
     onDeconstruct,
+    activeUserNote,
 }) => {
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [size, setSize] = useState({ width: 700, height: 550 });
@@ -159,7 +173,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     const [aiConvoSize, setAiConvoSize] = useState({ width: 448, height: 384 });
 
     const [userNotes, setUserNotes] = useState<UserNote[]>(initialUserNotes);
-    const [editingNoteId, setEditingNoteId] = useState<string | null>(initialUserNotes.length > 0 ? initialUserNotes[0].id : null);
+    const [editingNoteId, setEditingNoteId] = useState<string | null>(activeUserNote ? activeUserNote.id : (initialUserNotes.length > 0 ? initialUserNotes[0].id : null));
 
     const panelRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
@@ -301,13 +315,13 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     
     // Effect to auto-save user notes
     useEffect(() => {
-        if(isNoteTakingMode) {
+        if(isNoteTakingMode && onUpdateUserNotesForMapNode) {
             const handler = setTimeout(() => {
-                onUpdateUserNotes(state.nodeId, userNotes);
+                onUpdateUserNotesForMapNode(state.nodeId, userNotes);
             }, 1000);
             return () => clearTimeout(handler);
         }
-    }, [userNotes, onUpdateUserNotes, state.nodeId, isNoteTakingMode]);
+    }, [userNotes, onUpdateUserNotesForMapNode, state.nodeId, isNoteTakingMode]);
 
 
     const handleAiSelection = useCallback(() => {
@@ -552,11 +566,19 @@ Text: "${analysisText}"`;
 
     const handleUpdateNote = (noteId: string, newTitle: string, newContent: string) => {
         const now = Date.now();
-        setUserNotes(currentNotes =>
-            currentNotes.map(n =>
-                n.id === noteId ? { ...n, title: newTitle, content: newContent, updatedAt: now } : n
-            )
-        );
+        let updatedNote: UserNote | undefined;
+        const newNotes = userNotes.map(n => {
+            if (n.id === noteId) {
+                updatedNote = { ...n, title: newTitle, content: newContent, updatedAt: now };
+                return updatedNote;
+            }
+            return n;
+        });
+        setUserNotes(newNotes);
+    
+        if (onUpdateUserNote && updatedNote) {
+            onUpdateUserNote(updatedNote);
+        }
     };
 
     const handleDeleteNote = (noteId: string) => {

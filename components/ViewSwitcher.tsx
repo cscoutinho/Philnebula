@@ -1,9 +1,9 @@
 import React from 'react';
-import { BrainCircuit, Network, RssIcon } from './icons';
+import { BrainCircuit, Network, RssIcon, NexusIcon } from './icons';
 
 interface ViewSwitcherProps {
-    currentView: 'nebula' | 'map' | 'feed';
-    setView: (view: 'nebula' | 'map' | 'feed') => void;
+    currentView: 'nebula' | 'map' | 'feed' | 'nexus';
+    setView: (view: 'nebula' | 'map' | 'feed' | 'nexus') => void;
 }
 
 const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ currentView, setView }) => {
@@ -28,6 +28,14 @@ const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ currentView, setView }) => 
             >
                 <BrainCircuit className="w-5 h-5" />
                 <span>Map</span>
+            </button>
+            <button
+                onClick={() => setView('nexus')}
+                className={`${baseClasses} ${currentView === 'nexus' ? activeClasses : inactiveClasses}`}
+                aria-pressed={currentView === 'nexus'}
+            >
+                <NexusIcon className="w-5 h-5" />
+                <span>Nexus</span>
             </button>
             <button
                 onClick={() => setView('feed')}

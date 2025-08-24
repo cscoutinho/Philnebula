@@ -1,6 +1,10 @@
 
 
 
+
+
+
+
 export interface RawNode {
   id: number;
   name: string;
@@ -64,6 +68,7 @@ export interface UserNote {
   content: string; // HTML content from the rich-text editor
   createdAt: number;
   updatedAt: number;
+  tagIds?: string[];
 }
 
 export interface MapNode {
@@ -294,6 +299,12 @@ export interface ConceptualMap {
   };
 }
 
+export interface AppTag {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface AppSessionData {
     maps: ConceptualMap[];
     activeMapId: string | null;
@@ -304,6 +315,11 @@ export interface AppSessionData {
     beliefFlipChallenges: ChallengeSession[];
     importedNoteSources?: ImportedNoteSource[];
     processedNoteIds?: string[];
+    tags?: AppTag[];
+    nexusLayout?: {
+        notePositions: { userNoteId: string; x: number; y: number; width: number; height: number; }[];
+        links: { sourceNoteId: string; targetNoteId: string; }[];
+    };
     // DEPRECATED, will be migrated
     mapLayout?: { 
         nodes: MapNode[], 
@@ -391,6 +407,7 @@ export interface MapBuilderProps {
     onRequestConfirmation: ConfirmationRequestHandler;
     notesToPlace: KindleNote[] | null;
     onClearNotesToPlace: () => void;
+    onOpenStudio: (nodeId: string | number, x: number, y: number) => void;
 }
 
 export interface NodeContextMenuState {
