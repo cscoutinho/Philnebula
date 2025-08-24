@@ -47,12 +47,11 @@ interface StudioPanelProps {
     nodeName: string;
     onClose: () => void;
     onUpdateUserNotes: (nodeId: string | number, userNotes: UserNote[]) => void;
-    onLogEdit: (nodeId: string | number) => void;
+    onLogEdit: (nodeId: string | number, noteTitle: string) => void;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
     ai: GoogleGenAI;
     analysisMode?: boolean;
     onDeconstruct?: (result: { premises: string[], conclusion: string }) => void;
-    sourceNotes?: KindleNote[];
 }
 
 
@@ -145,7 +144,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     ai,
     analysisMode = false,
     onDeconstruct,
-    sourceNotes,
 }) => {
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [size, setSize] = useState({ width: 700, height: 550 });
@@ -160,10 +158,8 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     const [aiConvoPosition, setAiConvoPosition] = useState<{ x: number; y: number } | null>(null);
     const [aiConvoSize, setAiConvoSize] = useState({ width: 448, height: 384 });
 
-    const [activeTab, setActiveTab] = useState<'myNotes' | 'sourceNotes'>('myNotes');
     const [userNotes, setUserNotes] = useState<UserNote[]>(initialUserNotes);
-    const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-    const [madeChanges, setMadeChanges] = useState(false);
+    const [editingNoteId, setEditingNoteId] = useState<string | null>(initialUserNotes.length > 0 ? initialUserNotes[0].id : null);
 
     const panelRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
@@ -302,13 +298,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             setAiConvoPosition(null);
         }
     }, [aiConversation, aiConvoPosition, aiConvoSize]);
-
-    const handleClose = useCallback(() => {
-        if (isNoteTakingMode && madeChanges) {
-            onLogEdit(state.nodeId);
-        }
-        onClose();
-    }, [isNoteTakingMode, madeChanges, onLogEdit, onClose, state.nodeId]);
     
     // Effect to auto-save user notes
     useEffect(() => {
@@ -559,7 +548,6 @@ Text: "${analysisText}"`;
         const newNotes = [newNote, ...userNotes];
         setUserNotes(newNotes);
         setEditingNoteId(newNote.id);
-        setMadeChanges(true);
     };
 
     const handleUpdateNote = (noteId: string, newTitle: string, newContent: string) => {
@@ -569,15 +557,20 @@ Text: "${analysisText}"`;
                 n.id === noteId ? { ...n, title: newTitle, content: newContent, updatedAt: now } : n
             )
         );
-        setMadeChanges(true);
     };
 
     const handleDeleteNote = (noteId: string) => {
+        const noteToDelete = userNotes.find(n => n.id === noteId);
+        if (noteToDelete) {
+            logActivity('DELETE_NOTE', {
+                conceptName: nodeName,
+                noteTitle: noteToDelete.title,
+            });
+        }
         setUserNotes(currentNotes => currentNotes.filter(n => n.id !== noteId));
         if (editingNoteId === noteId) {
             setEditingNoteId(null);
         }
-        setMadeChanges(true);
     };
     
     if (analysisMode) {
@@ -589,7 +582,7 @@ Text: "${analysisText}"`;
             >
                 <div ref={headerRef} className="flex justify-between items-center p-3 border-b border-gray-700 bg-gray-800 rounded-t-lg cursor-grab active:cursor-grabbing flex-shrink-0">
                     <h3 className="text-md font-bold text-cyan-300 flex items-center gap-2 pl-2"><FlaskConicalIcon className="w-5 h-5"/> Argument Analysis Studio</h3>
-                    <button onClick={handleClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><X className="w-5 h-5"/></button>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><X className="w-5 h-5"/></button>
                 </div>
                 <div className="flex-grow p-4 flex flex-col">
                     <label htmlFor="argument-text" className="text-sm text-gray-400 mb-2">Paste or write the argument you want to analyze and map:</label>
@@ -615,6 +608,8 @@ Text: "${analysisText}"`;
         )
     }
     
+    const noteToEdit = userNotes.find(n => n.id === editingNoteId);
+    
     return (
         <div
             ref={panelRef}
@@ -631,75 +626,59 @@ Text: "${analysisText}"`;
         >
             <div ref={headerRef} className="flex justify-between items-center p-2 border-b border-gray-700 bg-gray-800 rounded-t-lg cursor-grab active:cursor-grabbing flex-shrink-0">
                 <h3 className="text-md font-bold text-cyan-300 flex items-center gap-2 pl-2"><NoteIcon className="w-5 h-5"/> Studio: {nodeName}</h3>
-                <button onClick={handleClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><X className="w-5 h-5"/></button>
+                <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><X className="w-5 h-5"/></button>
             </div>
 
             <div className="flex-grow flex overflow-hidden">
                 <div className="w-1/3 min-w-[200px] border-r border-gray-700 flex flex-col bg-gray-800/50">
-                    <div className="flex-shrink-0 p-2 border-b border-gray-700">
-                        <div className="flex bg-gray-700 rounded-md p-1">
-                            <button onClick={() => setActiveTab('myNotes')} className={`flex-1 text-sm py-1 rounded ${activeTab === 'myNotes' ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-600'}`}>My Notes</button>
-                            <button onClick={() => setActiveTab('sourceNotes')} className={`flex-1 text-sm py-1 rounded ${activeTab === 'sourceNotes' ? 'bg-green-600 text-white' : 'text-gray-300 hover:bg-gray-600'}`}>Source Notes</button>
+                    <div className="flex-grow flex flex-col overflow-y-auto">
+                        <ul className="flex-grow p-2 space-y-1">
+                            {userNotes.map(note => (
+                                <li key={note.id}>
+                                    <button 
+                                        onClick={() => setEditingNoteId(note.id)}
+                                        className={`w-full text-left p-2 rounded-md ${editingNoteId === note.id ? 'bg-cyan-800/80 ring-1 ring-cyan-500' : 'hover:bg-gray-700/70'}`}
+                                    >
+                                        <p className="font-semibold text-gray-100 truncate">{note.title}</p>
+                                        <p className="text-xs text-gray-400 mt-1 truncate">{note.content.replace(/<[^>]+>/g, '') || 'Empty note'}</p>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                        <div className="p-2 border-t border-gray-700">
+                            <button onClick={handleAddNewNote} className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">
+                                <Plus className="w-4 h-4" />
+                                Add New Note
+                            </button>
                         </div>
                     </div>
-
-                    {activeTab === 'myNotes' && (
-                        <div className="flex-grow flex flex-col overflow-y-auto">
-                            <ul className="flex-grow p-2 space-y-1">
-                                {userNotes.map(note => (
-                                    <li key={note.id}>
-                                        <button 
-                                            onClick={() => setEditingNoteId(note.id)}
-                                            className={`w-full text-left p-2 rounded-md ${editingNoteId === note.id ? 'bg-cyan-800/80 ring-1 ring-cyan-500' : 'hover:bg-gray-700/70'}`}
-                                        >
-                                            <p className="font-semibold text-gray-100 truncate">{note.title}</p>
-                                            <p className="text-xs text-gray-400 mt-1 truncate">{note.content.replace(/<[^>]+>/g, '') || 'Empty note'}</p>
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                            <div className="p-2 border-t border-gray-700">
-                                <button onClick={handleAddNewNote} className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">
-                                    <Plus className="w-4 h-4" />
-                                    Add New Note
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                    
-                    {activeTab === 'sourceNotes' && (
-                        <div className="flex-grow overflow-y-auto p-2">
-                            {(!sourceNotes || sourceNotes.length === 0) ? (
-                                <div className="p-4 text-center text-xs text-gray-500">No source notes attached.</div>
-                            ) : (
-                                <ul className="space-y-3">
-                                    {sourceNotes.map(note => (
-                                        <li key={note.id} className="p-2 bg-gray-900/50 rounded-md">
-                                            <p className="text-sm text-gray-200 italic">"{note.text}"</p>
-                                            <p className="text-xs text-gray-500 mt-1">{note.heading}</p>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
-                    )}
                 </div>
 
                 <div className="w-2/3 flex-grow flex flex-col">
-                    {editingNoteId && userNotes.find(n => n.id === editingNoteId) ? (
+                    {noteToEdit ? (
                         <EditableNoteCard
                             key={editingNoteId}
-                            note={userNotes.find(n => n.id === editingNoteId)!}
+                            note={noteToEdit}
                             onSave={(id, title, content) => {
+                                const isNewNote = noteToEdit.createdAt === noteToEdit.updatedAt;
                                 handleUpdateNote(id, title, content);
+                                
+                                if (isNewNote) {
+                                    logActivity('CREATE_NOTE', {
+                                        conceptName: nodeName,
+                                        noteTitle: title,
+                                    });
+                                } else {
+                                    onLogEdit(state.nodeId, title);
+                                }
                                 setEditingNoteId(null);
-                                onLogEdit(state.nodeId);
                             }}
                             onDelete={handleDeleteNote}
                             onCancel={() => setEditingNoteId(null)}
                             onAiSelection={handleAiSelection}
                             ai={ai}
                             logActivity={logActivity}
+                            nodeName={nodeName}
                         />
                     ) : (
                         <div className="flex-grow flex flex-col items-center justify-center text-center text-gray-500 p-4">
@@ -729,7 +708,8 @@ const EditableNoteCard: React.FC<{
     onAiSelection: () => void;
     ai: GoogleGenAI;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
-}> = ({ note, onSave, onDelete, onCancel, onAiSelection, ai, logActivity }) => {
+    nodeName: string;
+}> = ({ note, onSave, onDelete, onCancel, onAiSelection, ai, logActivity, nodeName }) => {
     const [title, setTitle] = useState(note.title);
     const [content, setContent, undo, redo, canUndo, canRedo] = useHistoryState(note.content);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -796,10 +776,12 @@ const EditableNoteCard: React.FC<{
                         },
                     };
                     
-                    const textPart = { text: "Transcribe this audio recording precisely and accurately." };
+                    const model = 'gemini-2.5-flash';
+                    const prompt = "Transcribe this audio recording precisely and accurately.";
+                    const textPart = { text: prompt };
 
                     const response = await ai.models.generateContent({
-                      model: 'gemini-2.5-flash',
+                      model,
                       contents: { parts: [audioPart, textPart] },
                     });
                     
@@ -819,14 +801,25 @@ const EditableNoteCard: React.FC<{
                             selection.addRange(range);
                         }
                         
-                        // Always insert as a new paragraph. If the editor is empty, this will be the first one.
-                        // If not, it will be appended at the end because we moved the cursor.
                         const contentToInsert = `<p>${transcription}</p>`;
 
                         document.execCommand('insertHTML', false, contentToInsert);
                         setContent(editor.innerHTML, true);
                     }
-                    logActivity('VOICE_NOTE', { nodeName: note.title });
+                    
+                    const { usageMetadata } = response;
+                    logActivity('VOICE_NOTE', {
+                        conceptName: nodeName,
+                        provenance: {
+                            prompt,
+                            systemInstruction: undefined,
+                            rawResponse: response.text,
+                            model,
+                            inputTokens: usageMetadata?.promptTokenCount,
+                            outputTokens: usageMetadata?.candidatesTokenCount,
+                            totalTokens: (usageMetadata?.promptTokenCount || 0) + (usageMetadata?.candidatesTokenCount || 0),
+                        }
+                    });
 
                 } catch (err) {
                     console.error("Transcription failed:", err);

@@ -3,13 +3,12 @@ import { useMapInteraction } from './hooks/useMapInteraction';
 import NodeComponent from './NodeComponent';
 import LinkComponent from './LinkComponent';
 import { LassoIcon, SparkleIcon, FlaskConicalIcon, HelpCircleIcon, Trash2, BrainCircuit, X } from '../icons';
-import { MapBuilderProps, RelationshipTypeInfo, MapNode, KindleNote, DropOnNodeMenuState, SocraticSuggestion } from '../../types';
+import { MapBuilderProps, RelationshipTypeInfo, MapNode, KindleNote, SocraticSuggestion } from '../../types';
 
-interface MapCanvasProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'relationshipTypes' | 'allNodes' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace'> {
+interface MapCanvasProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'relationshipTypes' | 'allNodes' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace' | 'onAppendToNodeNotes'> {
     relationshipColorMap: Record<string, string>;
     uiState: ReturnType<typeof import('./hooks/useMapUI').useMapUI>;
     aiState: ReturnType<typeof import('./hooks/useMapAI').useMapAI>;
-    setDropOnNodeMenu: (state: DropOnNodeMenuState | null) => void;
     socraticSuggestions: SocraticSuggestion[];
     onSuggestionClick: (suggestion: SocraticSuggestion) => void;
 }
@@ -25,7 +24,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
     allNodes,
     onAddNoteToMap,
     onAddMultipleNotesToMap,
-    setDropOnNodeMenu,
+    onAppendToNodeNotes,
     socraticSuggestions,
     onSuggestionClick,
     notesToPlace,
@@ -46,7 +45,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         handleDragOver,
         handleBackgroundClick,
         handleBackgroundDoubleClick,
-        handleNodeClick,
         handleNodeContextMenu,
         handleNodeDoubleClick,
         handleResizeStart,
@@ -61,9 +59,9 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         nodeMap,
         onAddNoteToMap,
         onAddMultipleNotesToMap,
+        onAppendToNodeNotes,
         dropTargetNodeId, 
         setDropTargetNodeId,
-        setDropOnNodeMenu,
         notesToPlace,
         onClearNotesToPlace,
     });
@@ -157,7 +155,6 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
                             isEditing={uiState.editingNodeId === node.id}
                             isDropTarget={dropTargetNodeId === node.id}
                             linkingNodeId={linkingNode}
-                            onClick={handleNodeClick}
                             onContextMenu={handleNodeContextMenu}
                             onDoubleClick={handleNodeDoubleClick}
                             onNameChange={uiState.handleNodeNameChange}

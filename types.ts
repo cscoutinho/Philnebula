@@ -1,5 +1,6 @@
 
 
+
 export interface RawNode {
   id: number;
   name: string;
@@ -86,7 +87,6 @@ export interface MapNode {
   isCitation?: boolean;
   citationData?: Citation;
   userNotes?: UserNote[];
-  sourceNotes?: KindleNote[];
 }
 
 export interface MapLink {
@@ -191,10 +191,13 @@ export type ProjectActivityType =
   | 'INITIATE_BELIEF_CHALLENGE_FROM_MAP'
   | 'IMPORT_NOTES'
   | 'ADD_NOTE_TO_MAP'
+  | 'APPEND_NOTE_TO_NODE'
   | 'SOCRATIC_ACTION_TAKEN'
   | 'SOCRATIC_SUGGESTION_TRIGGERED'
   | 'ANALYZE_RESEARCH_TRENDS'
-  | 'VOICE_NOTE';
+  | 'VOICE_NOTE'
+  | 'CREATE_NOTE'
+  | 'DELETE_NOTE';
 
 export interface ProjectActivity {
   id: string;
@@ -384,7 +387,6 @@ export interface MapBuilderProps {
     aiAssistanceLevel: 'off' | 'moderate' | 'rigorous';
     onAddNoteToMap: (note: KindleNote, position: { x: number, y: number }) => void;
     onAddMultipleNotesToMap: (notes: KindleNote[], position: { x: number, y: number }) => void;
-    onAttachSourceNote: (nodeId: string | number, notes: KindleNote[]) => void;
     onAppendToNodeNotes: (nodeId: string | number, notes: KindleNote[]) => void;
     onRequestConfirmation: ConfirmationRequestHandler;
     notesToPlace: KindleNote[] | null;
@@ -397,17 +399,17 @@ export interface NodeContextMenuState {
     nodeId: number | string;
 }
 
-export interface LinkContextMenuState {
-    x: number;
-    y: number;
-    link: MapLink;
-}
-
 export interface DropOnNodeMenuState {
     x: number;
     y: number;
     targetNodeId: string | number;
     droppedNotes: KindleNote[];
+}
+
+export interface LinkContextMenuState {
+    x: number;
+    y: number;
+    link: MapLink;
 }
 
 export interface EditLinkTypesMenuState {

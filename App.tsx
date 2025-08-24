@@ -1,6 +1,9 @@
 
 
 
+
+
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { parseMarkdown, flattenData } from './services/dataParser';
@@ -28,6 +31,30 @@ import StudioPanel from './components/MapBuilder/Panels/StudioPanel';
 import NotesInbox from './components/NotesInbox';
 import * as mapBuilderService from './services/mapBuilderService';
 import * as feedService from './services/feedService';
+
+const formatUserNoteTitleFromKindleNote = (note: KindleNote): string => {
+    // Example note.heading: "Destaque - Página 24"
+    // Example note.section: "Preface to the 2013 Edition"
+    // Desired output: "From: Destaque - Preface to the 2013 Edition - Página 24"
+
+    const headingParts = note.heading.split(' - ');
+
+    // If heading doesn't have the expected format, return the old format
+    if (headingParts.length < 2) {
+        return `From: ${note.heading}`;
+    }
+
+    const noteTypeStr = headingParts[0]; // e.g., "Destaque"
+    const locationStr = headingParts.slice(1).join(' - '); // e.g., "Página 24"
+
+    if (note.section && note.section !== 'General Notes') {
+        return `From: ${noteTypeStr} - ${note.section} - ${locationStr}`;
+    }
+
+    // Fallback for notes without a specific section
+    return `From: ${note.heading}`;
+};
+
 
 // I. Relações de Inferência e Fundamentação (Greens/Blues)
 const inferenceAndFoundation = [
@@ -617,7 +644,13 @@ const App: React.FC = () => {
                 ...placeholderNode,
                 id: finalId,
                 name: title,
-                sourceNotes: [note],
+                userNotes: [{
+                    id: `note_${note.id}_content`,
+                    title: formatUserNoteTitleFromKindleNote(note),
+                    content: `<p>${note.text}</p>`,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                }],
             };
 
             handleSetLayout(l => ({
@@ -653,22 +686,19 @@ const App: React.FC = () => {
         }
     }, [handleAddNoteToMap]);
     
-    const handleAttachSourceNote = useCallback((nodeId: string | number, notes: KindleNote[]) => {
-        handleSetLayout(l => ({
-            ...l,
-            nodes: l.nodes.map(n => {
-                if (n.id === nodeId) {
-                    const existingNotes = new Map((n.sourceNotes || []).map(sn => [sn.id, sn]));
-                    notes.forEach(newNote => existingNotes.set(newNote.id, newNote));
-                    return { ...n, sourceNotes: Array.from(existingNotes.values()) };
-                }
-                return n;
-            })
-        }));
-        handleMarkNotesAsProcessed(notes.map(n => n.id));
-    }, [handleSetLayout, handleMarkNotesAsProcessed]);
-    
     const handleAppendToNodeNotes = useCallback((nodeId: string | number, notes: KindleNote[]) => {
+        const node = activeMapLayout.nodes.find(n => n.id === nodeId);
+        const source = activeProjectData?.importedNoteSources?.find(s => s.id === notes[0]?.sourceId);
+
+        if (node) {
+            logActivity('APPEND_NOTE_TO_NODE', {
+                conceptName: node.name,
+                conceptId: node.id,
+                noteCount: notes.length,
+                sourceTitle: source?.title || 'Unknown Source',
+            });
+        }
+
         handleSetLayout(l => ({
             ...l,
             nodes: l.nodes.map(n => {
@@ -677,8 +707,8 @@ const App: React.FC = () => {
                         const now = Date.now();
                         return {
                             id: `note_${now}_${Math.random().toString(36).substring(2, 9)}_${index}`,
-                            title: `From: ${note.heading}`,
-                            content: `<blockquote><p>${note.text}</p></blockquote>`,
+                            title: formatUserNoteTitleFromKindleNote(note),
+                            content: `<blockquote><p>${note.text}</p></blockquote><p><br></p>`,
                             createdAt: now,
                             updatedAt: now,
                         };
@@ -691,7 +721,7 @@ const App: React.FC = () => {
             })
         }));
         handleMarkNotesAsProcessed(notes.map(n => n.id));
-    }, [handleSetLayout, handleMarkNotesAsProcessed]);
+    }, [handleSetLayout, handleMarkNotesAsProcessed, logActivity, activeMapLayout.nodes, activeProjectData?.importedNoteSources]);
 
     const handleAddSelectedNotesToMap = useCallback((notes: KindleNote[]) => {
         setNotesToPlace(notes);
@@ -739,7 +769,6 @@ const App: React.FC = () => {
                         aiAssistanceLevel={session.aiAssistanceLevel || 'moderate'}
                         onAddNoteToMap={handleAddNoteToMap}
                         onAddMultipleNotesToMap={handleAddMultipleNotesToMap}
-                        onAttachSourceNote={handleAttachSourceNote}
                         onAppendToNodeNotes={handleAppendToNodeNotes}
                         onRequestConfirmation={requestConfirmation}
                         notesToPlace={notesToPlace}
@@ -891,7 +920,6 @@ const App: React.FC = () => {
                     // Props for note-taking mode, not used in analysis mode
                     state={{ nodeId: '', x: window.innerWidth / 2, y: window.innerHeight / 2 }}
                     initialUserNotes={[]}
-                    sourceNotes={[]}
                     nodeName=""
                     onUpdateUserNotes={() => {}}
                     onLogEdit={() => {}}

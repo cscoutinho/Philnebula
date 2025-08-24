@@ -11,7 +11,6 @@ interface NodeComponentProps {
     isEditing: boolean;
     isDropTarget: boolean;
     linkingNodeId: string | number | null;
-    onClick: (e: React.MouseEvent, node: MapNode) => void;
     onContextMenu: (e: React.MouseEvent, nodeId: string | number) => void;
     onDoubleClick: (e: React.MouseEvent, node: MapNode) => void;
     onNameChange: (nodeId: string | number, newName: string) => void;
@@ -29,7 +28,6 @@ const NodeComponent: React.FC<NodeComponentProps> & { getFill: (node: MapNode, s
     isEditing,
     isDropTarget,
     linkingNodeId,
-    onClick,
     onContextMenu,
     onDoubleClick,
     onNameChange,
@@ -40,7 +38,6 @@ const NodeComponent: React.FC<NodeComponentProps> & { getFill: (node: MapNode, s
     const fill = NodeComponent.getFill(node, { linkingNodeId, selectedNodeId: isSelected ? node.id : null, regionSelectedNodeIds: isRegionSelected ? new Set([node.id]) : new Set(), dropTargetNodeId: isDropTarget ? node.id : null });
     const stroke = NodeComponent.getStroke(node, { linkingNodeId, regionSelectedNodeIds: isRegionSelected ? new Set([node.id]) : new Set(), dropTargetNodeId: isDropTarget ? node.id : null });
     const hasUserNotes = node.userNotes && node.userNotes.some(n => n.content.trim() !== '' && n.content.trim() !== '<p><br></p>');
-    const hasSourceNotes = node.sourceNotes && node.sourceNotes.length > 0;
 
     return (
         <g
@@ -51,7 +48,6 @@ const NodeComponent: React.FC<NodeComponentProps> & { getFill: (node: MapNode, s
             }}
             transform={`translate(${node.x}, ${node.y})`}
             className={`map-node cursor-grab active:cursor-grabbing ${isLinking ? 'linking' : ''}`}
-            onClick={(e) => onClick(e, node)}
             onContextMenu={(e) => onContextMenu(e, node.id)}
             onDoubleClick={(e) => onDoubleClick(e, node)}
         >
@@ -79,7 +75,7 @@ const NodeComponent: React.FC<NodeComponentProps> & { getFill: (node: MapNode, s
                     rx="8"
                     fill={fill}
                     stroke={stroke}
-                    strokeWidth={(node.isAiGenerated || node.isDialectic || node.isUserDefined || node.isCitation || isRegionSelected || node.isCounterExample || hasSourceNotes) ? "3" : "2"}
+                    strokeWidth={(node.isAiGenerated || node.isDialectic || node.isUserDefined || node.isCitation || isRegionSelected || node.isCounterExample) ? "3" : "2"}
                     strokeDasharray={node.isAiGenerated ? "4 4" : "none"}
                 />
             ) : (
@@ -87,7 +83,7 @@ const NodeComponent: React.FC<NodeComponentProps> & { getFill: (node: MapNode, s
                     r={node.width / 2}
                     fill={fill}
                     stroke={stroke}
-                    strokeWidth={(node.isAiGenerated || node.isHistorical || node.isDialectic || node.isUserDefined || node.isCitation || isRegionSelected || node.isCounterExample || hasSourceNotes) ? "3" : "2"}
+                    strokeWidth={(node.isAiGenerated || node.isHistorical || node.isDialectic || node.isUserDefined || node.isCitation || isRegionSelected || node.isCounterExample) ? "3" : "2"}
                     strokeDasharray={node.isAiGenerated ? "4 4" : "none"}
                 />
             )}
@@ -140,14 +136,6 @@ const NodeComponent: React.FC<NodeComponentProps> & { getFill: (node: MapNode, s
                     </foreignObject>
                 </g>
             )}
-            {hasSourceNotes && (
-                <g>
-                    <title>Has source notes</title>
-                    <foreignObject x={-node.width / 2 - 12} y={-node.height / 2 - 12} width="24" height="24" className="overflow-visible pointer-events-none">
-                        <BookOpenIcon className="w-5 h-5 text-green-400 opacity-90" />
-                    </foreignObject>
-                </g>
-            )}
             {isAnalyzing && (
                 <foreignObject x={node.width / 2 - 12} y={-node.height / 2 - 12} width="24" height="24" className="overflow-visible">
                     <SparkleIcon className="w-6 h-6 text-yellow-400 animate-spin" />
@@ -178,9 +166,6 @@ NodeComponent.getFill = (node: MapNode, state: { linkingNodeId: string | number 
     if (node.isHistorical) return "#451a03"; // yellow-950
     if (node.isUserDefined) return "#262e3d"; // A slightly different dark gray
     if (node.isCitation) return "#374151"; // gray-700
-    if (node.sourceNotes && node.sourceNotes.length > 0) {
-        return node.sourceNotes[0].type === 'note' ? '#164e63' : '#14532d'; // cyan-900 vs green-900
-    }
     return "#1f2937"; // gray-800
 };
 
@@ -188,9 +173,6 @@ NodeComponent.getStroke = (node: MapNode, state: { linkingNodeId: string | numbe
     if (state.linkingNodeId === node.id) return "#facc15"; // yellow-400
     if (state.dropTargetNodeId === node.id) return "#67e8f9"; // cyan-300
     if (state.regionSelectedNodeIds.has(node.id)) return "#fde047"; // yellow-300
-    if (node.sourceNotes && node.sourceNotes.length > 0) {
-        return node.sourceNotes[0].type === 'note' ? '#22d3ee' : '#10b981'; // cyan-400 vs green-500
-    }
     if (node.isUserDefined) return "#ffffff"; // White for user-defined
     if (node.isDialectic || node.isCounterExample) return "#ef4444"; // red-500
     if (node.isHistorical) return "#a16207"; // yellow-700

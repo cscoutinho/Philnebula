@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { D3Node, MapNode, MapLink, RelationshipType, Citation, LogicalConstruct, ProjectActivityType, NodeContextMenuState, LinkContextMenuState, EditLinkTypesMenuState, FloatingTooltipState, ChangeNodeState, ColorPickerState, DialecticAnalysisState, LogicalWorkbenchState, FormalizationResult, ConfirmationRequestHandler } from '../../../types';
+import { D3Node, MapNode, MapLink, RelationshipType, Citation, LogicalConstruct, ProjectActivityType, NodeContextMenuState, LinkContextMenuState, EditLinkTypesMenuState, FloatingTooltipState, ChangeNodeState, ColorPickerState, DialecticAnalysisState, LogicalWorkbenchState, FormalizationResult, ConfirmationRequestHandler } from '../types';
 import { getMidpoint } from '../utils/calculations';
 
 const textColors = ['#FFFFFF', '#FDE047', '#A7F3D0', '#A5B4FC', '#F9A8D4', '#FCA5A5']; // White, Yellow, Green, Indigo, Pink, Red

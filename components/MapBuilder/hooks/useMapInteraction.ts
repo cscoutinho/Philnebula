@@ -3,16 +3,15 @@ import { select, pointer } from 'd3-selection';
 import { drag } from 'd3-drag';
 import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import 'd3-transition';
-import type { MapNode, MapLink, MapBuilderProps, LogicalWorkbenchState, KindleNote, DropOnNodeMenuState } from '../../../types';
+import type { MapNode, MapLink, MapBuilderProps, LogicalWorkbenchState, KindleNote } from '../../../types';
 
-interface useMapInteractionProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace'> {
+interface useMapInteractionProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace' | 'onAppendToNodeNotes'> {
     svgRef: React.RefObject<SVGSVGElement>;
     uiState: ReturnType<typeof import('./useMapUI').useMapUI>;
     aiState: ReturnType<typeof import('./useMapAI').useMapAI>;
     nodeMap: Map<string | number, MapNode>;
     dropTargetNodeId: string | number | null;
     setDropTargetNodeId: (id: string | number | null) => void;
-    setDropOnNodeMenu: (state: DropOnNodeMenuState | null) => void;
 }
 
 export const useMapInteraction = ({
@@ -25,9 +24,9 @@ export const useMapInteraction = ({
     nodeMap,
     onAddNoteToMap,
     onAddMultipleNotesToMap,
+    onAppendToNodeNotes,
     dropTargetNodeId,
     setDropTargetNodeId,
-    setDropOnNodeMenu,
     notesToPlace,
     onClearNotesToPlace,
 }: useMapInteractionProps) => {
@@ -72,31 +71,36 @@ export const useMapInteraction = ({
         }));
     }, [setLayout]);
 
-    const handleNodeClick = (e: React.MouseEvent, node: MapNode) => {
-        e.stopPropagation();
-
+    const handleNodeTap = (e: React.MouseEvent | PointerEvent, node: MapNode) => {
         if (notesToPlace && notesToPlace.length > 0) {
-            setDropOnNodeMenu({
-                x: e.clientX,
-                y: e.clientY,
-                targetNodeId: node.id,
-                droppedNotes: notesToPlace
-            });
+            onAppendToNodeNotes(node.id, notesToPlace);
+            onClearNotesToPlace();
+            setDropTargetNodeId(null);
             return;
         }
         
         setFloatingTooltip(null);
         setEditingNodeId(null);
-
-        if (node.sourceNotes && node.sourceNotes.length > 0) {
-            setFloatingTooltip({ x: e.clientX, y: e.clientY, title: `Source Note${node.sourceNotes.length > 1 ? 's' : ''}`, text: node.sourceNotes, type: 'source_note' });
+    
+        const sourceNotes = node.userNotes?.filter(n => n.title.startsWith("From: "));
+    
+        if (sourceNotes && sourceNotes.length > 0) {
+            const kindleLikeNotes: KindleNote[] = sourceNotes.map(un => ({
+                id: un.id,
+                heading: un.title.replace(/^From: /, ''),
+                text: un.content.replace(/<p><br\s*\/?>\s*<\/p>$/, '').replace(/<[^>]+>/g, ' ').trim(),
+                page: null,
+                type: 'note',
+                sourceId: 'unknown',
+            }));
+            setFloatingTooltip({ x: e.clientX, y: e.clientY, title: `Source Note${sourceNotes.length > 1 ? 's' : ''}`, text: kindleLikeNotes, type: 'source_note' });
         } else if ((node.isAiGenerated || node.isDialectic || node.isHistorical) && node.synthesisInfo) {
              setFloatingTooltip({ x: e.clientX, y: e.clientY, title: node.name, text: node.synthesisInfo.synthesis, type: 'synthesis' });
         }
          if (node.isCitation && node.citationData) {
             setFloatingTooltip({ x: e.clientX, y: e.clientY, title: 'Citation Details', text: [node.citationData], type: 'citation' });
         }
-
+    
         if (linkingNode !== null) {
             if (linkingNode !== node.id) {
                 const existingLink = links.find(l => (l.source === linkingNode && l.target === node.id) || (l.source === node.id && l.target === linkingNode));
@@ -338,11 +342,12 @@ export const useMapInteraction = ({
                     updateNodePosition(d.id, event.x, event.y);
                 }
             })
-            .on('end', (event) => {
+            .on('end', (event, d) => {
                 if (dragOccurred.current) {
                     event.sourceEvent.preventDefault();
                     event.sourceEvent.stopPropagation();
-                    (window as any).__mapDragEndTime = Date.now();
+                } else {
+                    handleNodeTap(event.sourceEvent, d);
                 }
                 dragStartPositions.current.clear();
             });
@@ -358,7 +363,7 @@ export const useMapInteraction = ({
             }
         }
         
-    }, [nodes, resizingState, regionSelectedNodeIds, setLayout, setRegionSelectedNodeIds, setSelectedNodeId, uiState, updateNodePosition, svgRef, notesToPlace, setDropTargetNodeId]);
+    }, [nodes, resizingState, regionSelectedNodeIds, setLayout, setRegionSelectedNodeIds, setSelectedNodeId, uiState, updateNodePosition, svgRef, notesToPlace, setDropTargetNodeId, handleNodeTap]);
 
     const handleDrop = (e: React.DragEvent<SVGSVGElement>) => {
         e.preventDefault();
@@ -370,13 +375,9 @@ export const useMapInteraction = ({
 
         if (dropTargetNodeId && (kindleNoteData || multipleKindleNotesData)) {
             const notes = kindleNoteData ? [JSON.parse(kindleNoteData)] : JSON.parse(multipleKindleNotesData);
-            setDropOnNodeMenu({
-                x: e.clientX,
-                y: e.clientY,
-                targetNodeId: dropTargetNodeId,
-                droppedNotes: notes
-            });
-            return; 
+            onAppendToNodeNotes(dropTargetNodeId, notes);
+            onClearNotesToPlace();
+            return;
         }
 
         if (kindleNoteData) {
@@ -471,7 +472,6 @@ export const useMapInteraction = ({
         handleDragOver,
         handleBackgroundClick,
         handleBackgroundDoubleClick,
-        handleNodeClick,
         handleNodeContextMenu,
         handleNodeDoubleClick,
         handleResizeStart,

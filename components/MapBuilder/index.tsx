@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import type { D3Node, Citation, MapLink, MapBuilderProps, FloatingTooltipState, LogicalWorkbenchState, RelationshipTypeInfo, BeliefConfirmationState, KindleNote, DropOnNodeMenuState, ConfirmationRequestHandler, UserNote } from '../../types';
+import type { D3Node, Citation, MapLink, MapBuilderProps, FloatingTooltipState, LogicalWorkbenchState, RelationshipTypeInfo, BeliefConfirmationState, KindleNote, ConfirmationRequestHandler, UserNote } from '../../types';
 
 import { useMapUI } from './hooks/useMapUI';
 import { useMapAI } from './hooks/useMapAI';
@@ -21,7 +21,6 @@ import LinkComponent from './LinkComponent';
 import DefinitionAnalysisPanel from './Panels/DefinitionAnalysisPanel';
 import StudioPanel from './Panels/StudioPanel';
 import BeliefConfirmationPanel from './Panels/BeliefConfirmationPanel';
-import DropOnNodeMenu from './ContextMenus/DropOnNodeMenu';
 
 
 import { X, PlusCircle, ExternalLinkIcon } from '../icons';
@@ -143,7 +142,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
     aiAssistanceLevel,
     onAddNoteToMap,
     onAddMultipleNotesToMap,
-    onAttachSourceNote,
     onAppendToNodeNotes,
     onRequestConfirmation,
     notesToPlace,
@@ -156,7 +154,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
     const [isExportingImg, setIsExportingImg] = useState(false);
     const [isExportingJson, setIsExportingJson] = useState(false);
     const [beliefConfirmationState, setBeliefConfirmationState] = useState<BeliefConfirmationState | null>(null);
-    const [dropOnNodeMenu, setDropOnNodeMenu] = useState<DropOnNodeMenuState | null>(null);
 
     const relationshipColorMap = useMemo(() => {
         return relationshipTypes.reduce((acc, item) => {
@@ -191,7 +188,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
     const { ref: colorPickerRef, style: colorPickerStyle } = useFloatingPosition(ui.colorPicker);
     const { ref: nodeContextMenuRef, style: nodeContextMenuStyle } = useFloatingPosition(ui.nodeContextMenu);
     const { ref: linkContextMenuRef, style: linkContextMenuStyle } = useFloatingPosition(ui.linkContextMenu);
-    const { ref: dropOnNodeMenuRef, style: dropOnNodeMenuStyle } = useFloatingPosition(dropOnNodeMenu);
     const { ref: relationshipMenuRef, style: relationshipMenuStyle } = useFloatingPosition(ui.relationshipMenu, { centered: true });
     const { ref: editLinkTypesMenuRef, style: editLinkTypesMenuStyle } = useFloatingPosition(ui.editLinkTypesMenu, { strategy: 'flip' });
     const { ref: floatingTooltipRef, style: floatingTooltipStyle } = useFloatingPosition(ui.floatingTooltip, { offsetX: 15, offsetY: 10 });
@@ -307,7 +303,7 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
                 aiState={aiHooks}
                 onAddNoteToMap={onAddNoteToMap}
                 onAddMultipleNotesToMap={onAddMultipleNotesToMap}
-                setDropOnNodeMenu={setDropOnNodeMenu}
+                onAppendToNodeNotes={onAppendToNodeNotes}
                 socraticSuggestions={aiHooks.socraticSuggestions}
                 onSuggestionClick={(suggestion) => aiHooks.handleSocraticAction(suggestion, suggestion.availableActions[0])}
                 notesToPlace={notesToPlace}
@@ -328,7 +324,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
             {ui.nodeContextMenu && <div ref={nodeContextMenuRef} style={nodeContextMenuStyle}><NodeContextMenu nodeContextMenu={ui.nodeContextMenu} node={nodeMap.get(ui.nodeContextMenu.nodeId)} isAnalyzingGenealogy={aiHooks.isAnalyzingGenealogy === ui.nodeContextMenu.nodeId} setLinkingNode={ui.setLinkingNode} setNodeContextMenu={ui.setNodeContextMenu} handleAnalyzeGenealogy={aiHooks.handleAnalyzeGenealogy} setChangingNodeState={ui.setChangingNodeState} setColorPicker={ui.setColorPicker} updateNodeShape={ui.updateNodeShape} deleteNode={ui.deleteNode} onEditNote={(nodeId) => ui.setStudioState({ nodeId, x: ui.nodeContextMenu!.x, y: ui.nodeContextMenu!.y })} /></div>}
             {ui.colorPicker && <div ref={colorPickerRef} style={colorPickerStyle}><ColorPicker colorPicker={ui.colorPicker} textColors={ui.textColors} handleTextColorChange={ui.handleTextColorChange} /></div>}
             {ui.linkContextMenu && <div ref={linkContextMenuRef} style={linkContextMenuStyle}><LinkContextMenu linkContextMenu={ui.linkContextMenu} setLogicalWorkbench={ui.setLogicalWorkbench} handleFormalizeArgument={(state) => aiHooks.handleFormalizeArgument(state)} setLinkContextMenu={ui.setLinkContextMenu} setDialecticAnalysis={ui.setDialecticAnalysis} handleAnalyzeArgument={aiHooks.handleAnalyzeArgument} handleExploreImplications={aiHooks.handleExploreImplications} generateJustification={aiHooks.generateJustification} setEditLinkTypesMenu={ui.setEditLinkTypesMenu} updateLinkPathStyle={ui.updateLinkPathStyle} flipLinkCurve={ui.flipLinkCurve} deleteLink={ui.deleteLink} handleAnalyzeDefinition={aiHooks.handleAnalyzeDefinition} onChallengeBelief={(link, x, y) => setBeliefConfirmationState({ link, x, y })} handleGenerateCounterExample={aiHooks.handleGenerateCounterExample} handleGenerateAlternativeHypothesis={aiHooks.handleGenerateAlternativeHypothesis} /></div>}
-            {dropOnNodeMenu && <div ref={dropOnNodeMenuRef} style={dropOnNodeMenuStyle}><DropOnNodeMenu menuState={dropOnNodeMenu} onAttach={onAttachSourceNote} onAppend={onAppendToNodeNotes} onClose={() => setDropOnNodeMenu(null)} onClearNotesToPlace={onClearNotesToPlace} /></div>}
             {ui.editLinkTypesMenu && (
                 <div ref={editLinkTypesMenuRef} style={editLinkTypesMenuStyle} className="fixed bg-gray-800 border border-gray-600 rounded-md shadow-lg p-2 z-50 text-white text-sm w-64" onClick={e => e.stopPropagation()}>
                     <div className="flex justify-between items-center mb-2">
@@ -412,7 +407,6 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
                     state={ui.studioState}
                     nodeName={nodeMap.get(ui.studioState.nodeId)?.name || ''}
                     initialUserNotes={nodeMap.get(ui.studioState.nodeId)?.userNotes || []}
-                    sourceNotes={nodeMap.get(ui.studioState.nodeId)?.sourceNotes}
                     onClose={() => ui.setStudioState(null)}
                     onUpdateUserNotes={handleUpdateUserNotes}
                     onLogEdit={ui.handleLogNoteEdit}

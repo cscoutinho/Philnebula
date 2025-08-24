@@ -1,6 +1,6 @@
 import React from 'react';
 import { ProjectActivity, ProjectActivityType } from '../types';
-import { ChevronLeft, BrainCircuit, Network, PlusCircle, LinkIcon, RssIcon, SparkleIcon, DiaryIcon, ExternalLinkIcon, ReplaceIcon, HistoryIcon, MessageSquareQuote, ScaleIcon, FlaskConicalIcon, Edit, LightbulbIcon, Check, RefreshCw, BookOpenIcon, StickyNoteIcon, GraduationCapIcon } from './icons';
+import { ChevronLeft, BrainCircuit, Network, PlusCircle, LinkIcon, RssIcon, SparkleIcon, DiaryIcon, ExternalLinkIcon, ReplaceIcon, HistoryIcon, MessageSquareQuote, ScaleIcon, FlaskConicalIcon, Edit, LightbulbIcon, Check, RefreshCw, BookOpenIcon, StickyNoteIcon, GraduationCapIcon, MicrophoneIcon, Trash2, MessageSquarePlus } from './icons';
 
 interface ProjectDiaryPanelProps {
     isOpen: boolean;
@@ -49,8 +49,12 @@ const ActivityIcon: React.FC<{ type: ProjectActivity['type'] }> = ({ type }) => 
         case 'COMPLETE_BELIEF_CHALLENGE': return <Check className="w-4 h-4 text-green-400" />;
         case 'IMPORT_NOTES': return <BookOpenIcon className="w-4 h-4 text-cyan-400" />;
         case 'ADD_NOTE_TO_MAP': return <StickyNoteIcon className="w-4 h-4 text-yellow-400" />;
+        case 'APPEND_NOTE_TO_NODE': return <MessageSquarePlus className="w-4 h-4 text-cyan-400" />;
         case 'SOCRATIC_ACTION_TAKEN': return <LightbulbIcon className="w-4 h-4 text-purple-400" />;
         case 'ANALYZE_RESEARCH_TRENDS': return <GraduationCapIcon className="w-4 h-4 text-blue-400" />;
+        case 'VOICE_NOTE': return <MicrophoneIcon className="w-4 h-4 text-fuchsia-400" />;
+        case 'CREATE_NOTE': return <StickyNoteIcon className="w-4 h-4 text-green-400" />;
+        case 'DELETE_NOTE': return <Trash2 className="w-4 h-4 text-red-400" />;
         default: return <BrainCircuit className="w-4 h-4 text-gray-400" />;
     }
 };
@@ -116,7 +120,7 @@ const ActivityText: React.FC<{ activity: ProjectActivity }> = ({ activity }) => 
         case 'GENERATE_JUSTIFICATION':
             return <>Generated justification for the link between <span className="font-bold text-gray-100">'{payload.sourceName}'</span> and <span className="font-bold text-gray-100">'{payload.targetName}'</span>.</>;
         case 'EDIT_NOTE':
-            return <>Edited note for <span className="font-bold text-gray-100">'{payload.conceptName}'</span>.</>;
+            return <>Edited note <span className="font-bold text-gray-100">'{payload.noteTitle}'</span> for <span className="font-bold text-gray-100">'{payload.conceptName}'</span>.</>;
         case 'ASK_AI_ASSISTANT':
             const context = payload.isFollowUp ? 'Follow-up with AI' : 'Used AI Assistant';
             return <>{context}{payload.context ? ` on "${payload.context}"` : ''}: <span className="italic text-gray-300">"{payload.userInstruction}"</span></>;
@@ -132,8 +136,16 @@ const ActivityText: React.FC<{ activity: ProjectActivity }> = ({ activity }) => 
             return <>Imported {payload.noteCount} notes from <span className="font-bold text-gray-100">'{payload.title}'</span>.</>;
         case 'ADD_NOTE_TO_MAP':
             return <>Added note as <span className="font-bold text-gray-100">'{payload.synthesizedTitle}'</span> from '{payload.title}'.</>;
+        case 'APPEND_NOTE_TO_NODE':
+            return <>Appended {payload.noteCount} note{payload.noteCount > 1 ? 's' : ''} from <span className="font-bold text-gray-100">'{payload.sourceTitle}'</span> to <span className="font-bold text-gray-100">'{payload.conceptName}'</span>.</>;
         case 'ANALYZE_RESEARCH_TRENDS':
             return <>Analyzed research trends for <span className="font-bold text-gray-100">'{payload.conceptName}'</span> using {payload.publicationCount} publications.</>;
+        case 'VOICE_NOTE':
+            return <>Transcribed a voice note in <span className="font-bold text-gray-100">'{payload.conceptName}'</span>.</>;
+        case 'CREATE_NOTE':
+            return <>Created note <span className="font-bold text-gray-100">'{payload.noteTitle}'</span> in <span className="font-bold text-gray-100">'{payload.conceptName}'</span>.</>;
+        case 'DELETE_NOTE':
+            return <>Deleted note <span className="font-bold text-gray-100">'{payload.noteTitle}'</span> from <span className="font-bold text-gray-100">'{payload.conceptName}'</span>.</>;
         default:
             return <>{type}</>;
     }
