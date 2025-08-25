@@ -889,25 +889,25 @@ const EditableNoteCard: React.FC<{
                 />
             </div>
             <div className="flex items-center p-2 border-b border-gray-700 bg-gray-800/50 flex-shrink-0 gap-1">
-                 <button onClick={undo} disabled={!canUndo} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50" title="Undo"><UndoIcon className="w-4 h-4"/></button>
-                <button onClick={redo} disabled={!canRedo} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50" title="Redo"><RedoIcon className="w-4 h-4"/></button>
+                 <button onMouseDown={(e) => e.preventDefault()} onClick={undo} disabled={!canUndo} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50" title="Undo"><UndoIcon className="w-4 h-4"/></button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={redo} disabled={!canRedo} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded disabled:opacity-50" title="Redo"><RedoIcon className="w-4 h-4"/></button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
-                <button onClick={() => handleExecCommand('bold')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Bold"><BoldIcon className="w-4 h-4"/></button>
-                <button onClick={() => handleExecCommand('italic')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Italic"><ItalicIcon className="w-4 h-4"/></button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('bold')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Bold"><BoldIcon className="w-4 h-4"/></button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('italic')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Italic"><ItalicIcon className="w-4 h-4"/></button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
                 <div className="relative">
-                    <button onClick={() => { setIsColorPickerOpen(p => !p); setIsFontSizePickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Text Color"><PaletteIcon className="w-4 h-4"/></button>
+                    <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setIsColorPickerOpen(p => !p); setIsFontSizePickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Text Color"><PaletteIcon className="w-4 h-4"/></button>
                     {isColorPickerOpen && (
                         <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded-md shadow-lg p-2 z-50 flex gap-2">
-                            {textColors.map(color => <button key={color} onClick={() => handleExecCommand('foreColor', color)} className="w-5 h-5 rounded-full border-2 border-transparent hover:border-white" style={{ backgroundColor: color }} />)}
+                            {textColors.map(color => <button key={color} onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('foreColor', color)} className="w-5 h-5 rounded-full border-2 border-transparent hover:border-white" style={{ backgroundColor: color }} />)}
                         </div>
                     )}
                 </div>
                 <div className="relative">
-                    <button onClick={() => { setIsFontSizePickerOpen(p => !p); setIsColorPickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Font Size"><FontSizeIcon className="w-4 h-4"/></button>
+                    <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setIsFontSizePickerOpen(p => !p); setIsColorPickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Font Size"><FontSizeIcon className="w-4 h-4"/></button>
                     {isFontSizePickerOpen && (
                         <div className="absolute top-full left-0 mt-1 w-28 bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50">
-                            {fontSizes.map(size => <button key={size.name} onClick={() => handleExecCommand('fontSize', size.value)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded text-sm">{size.name}</button>)}
+                            {fontSizes.map(size => <button key={size.name} onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('fontSize', size.value)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded text-sm">{size.name}</button>)}
                         </div>
                     )}
                 </div>

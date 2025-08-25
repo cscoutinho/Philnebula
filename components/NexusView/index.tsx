@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { select, pointer } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import { AppSessionData, UserNote, AppTag } from '../../types';
-import { BrainCircuit, LinkIcon, Plus, Edit, Trash2, X, Check, Search, ChevronLeft, ChevronRight } from '../icons';
+import { BrainCircuit, LinkIcon, Edit, Trash2, X, Check, Search, ChevronLeft, ChevronRight } from '../icons';
 import ProjectSwitcher from '../ProjectSwitcher';
 
 type NexusNote = UserNote & { mapNodeId: string | number; mapNodeName: string };
@@ -117,19 +117,6 @@ const SidePanel: React.FC<{
     tagCounts: Map<string, number>;
 }> = ({ tags, onUpdateTags, searchQuery, setSearchQuery, selectedTagIds, setSelectedTagIds, isCollapsed, onToggleCollapse, session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation, tagCounts }) => {
     const [editingTag, setEditingTag] = useState<AppTag | null>(null);
-    const [newTagName, setNewTagName] = useState('');
-    const [newTagColor, setNewTagColor] = useState('#6366f1');
-
-    const handleAddTag = () => {
-        if (!newTagName.trim()) return;
-        const newTag: AppTag = {
-            id: `tag_${Date.now()}`,
-            name: newTagName.trim(),
-            color: newTagColor,
-        };
-        onUpdateTags([...tags, newTag]);
-        setNewTagName('');
-    };
 
     const handleUpdateTag = () => {
         if (!editingTag || !editingTag.name.trim()) return;
@@ -225,13 +212,6 @@ const SidePanel: React.FC<{
                             ))}
                         </ul>
                     </div>
-                    <div className="flex-shrink-0 p-4 border-t border-gray-700">
-                        <div className="flex items-center gap-2">
-                            <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)} className="w-8 h-8 p-1 bg-gray-800 border border-gray-600 rounded-md"/>
-                            <input type="text" value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="New tag name..." className="flex-grow p-1.5 bg-gray-800 border border-gray-600 rounded-md text-sm"/>
-                            <button onClick={handleAddTag} className="p-2 bg-cyan-600 rounded-md"><Plus className="w-4 h-4"/></button>
-                        </div>
-                    </div>
                 </>
             )}
         </aside>
@@ -240,10 +220,28 @@ const SidePanel: React.FC<{
 
 
 const NexusView: React.FC<NexusViewProps> = ({ 
-    allUserNotes, activeProjectData, updateActiveProjectData, onOpenStudioForNexusNote, 
+    allUserNotes: rawAllUserNotes, activeProjectData, updateActiveProjectData, onOpenStudioForNexusNote, 
     focusNoteId, onClearFocusNote, focusTagId, onClearFocusTag, onUpdateNexusLayout, onUpdateTags,
     session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation
 }) => {
+    // Deduplicate notes by ID to prevent double counting in tags
+    const allUserNotes = useMemo(() => {
+        const seenIds = new Set<string>();
+        const uniqueNotes = [];
+        for (const note of rawAllUserNotes) {
+            if (!seenIds.has(note.id)) {
+                seenIds.add(note.id);
+                uniqueNotes.push(note);
+            }
+        }
+        if (uniqueNotes.length !== rawAllUserNotes.length) {
+            console.warn('NexusView: Removed duplicate notes', {
+                original: rawAllUserNotes.length,
+                deduplicated: uniqueNotes.length
+            });
+        }
+        return uniqueNotes;
+    }, [rawAllUserNotes]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -273,27 +271,29 @@ const NexusView: React.FC<NexusViewProps> = ({
     }, [focusTagId, onClearFocusTag]);
 
     const notePositions = useMemo(() => {
-        const posMap = new Map<string, NotePosition>((activeProjectData.nexusLayout?.notePositions || []).map(p => [p.userNoteId, p]));
-        const updatedPositions: NotePosition[] = [];
-        allUserNotes.forEach((note, index) => {
-            if (!posMap.has(note.id)) {
-                updatedPositions.push({
-                    userNoteId: note.id,
-                    x: (index % 5) * 320 + 20,
-                    y: Math.floor(index / 5) * 240 + 20,
-                    width: 300,
-                    height: 220,
-                });
-            }
-        });
-        if (updatedPositions.length > 0) {
+        return new Map<string, NotePosition>((activeProjectData.nexusLayout?.notePositions || []).map(p => [p.userNoteId, p]));
+    }, [activeProjectData.nexusLayout]);
+
+    // Separate effect to handle adding positions for new notes
+    useEffect(() => {
+        const existingPositionIds = new Set((activeProjectData.nexusLayout?.notePositions || []).map(p => p.userNoteId));
+        const newNotesWithoutPositions = allUserNotes.filter(note => !existingPositionIds.has(note.id));
+        
+        if (newNotesWithoutPositions.length > 0) {
+            const updatedPositions: NotePosition[] = newNotesWithoutPositions.map((note, index) => ({
+                userNoteId: note.id,
+                x: (index % 5) * 320 + 20,
+                y: Math.floor(index / 5) * 240 + 20,
+                width: 300,
+                height: 220,
+            }));
+            
             onUpdateNexusLayout(layout => ({
                 links: layout?.links || [],
                 notePositions: [...(layout?.notePositions || []), ...updatedPositions]
             }));
         }
-        return new Map<string, NotePosition>((activeProjectData.nexusLayout?.notePositions || []).map(p => [p.userNoteId, p]));
-    }, [allUserNotes, activeProjectData.nexusLayout, onUpdateNexusLayout]);
+    }, [allUserNotes.length, activeProjectData.nexusLayout?.notePositions?.length, onUpdateNexusLayout]);
     
 
     const filteredNotes = useMemo(() => {
@@ -311,13 +311,13 @@ const NexusView: React.FC<NexusViewProps> = ({
 
     const tagCounts = useMemo(() => {
         const counts = new Map<string, number>();
-        for (const note of filteredNotes) {
+        for (const note of allUserNotes) {
             for (const tagId of note.tagIds || []) {
                 counts.set(tagId, (counts.get(tagId) || 0) + 1);
             }
         }
         return counts;
-    }, [filteredNotes]);
+    }, [allUserNotes]);
 
 
     // Setup zoom behavior
@@ -420,32 +420,44 @@ const NexusView: React.FC<NexusViewProps> = ({
         const handlePointerUp = (upEvent: PointerEvent) => {
             // Always clean up listeners and pointer capture
             window.removeEventListener('pointermove', handlePointerMove);
-            noteCardElement.releasePointerCapture(e.pointerId);
+            window.removeEventListener('pointerup', handlePointerUp);
+            
+            try {
+                noteCardElement.releasePointerCapture(e.pointerId);
+            } catch (err) {
+                // Ignore capture release errors
+            }
 
             // If a drag occurred, update the state
-            if (dragInfo.current?.thresholdPassed) {
+            if (dragInfo.current?.thresholdPassed && dragInfo.current.noteId === noteId) {
                 const currentDragInfo = dragInfo.current;
                 const worldUpCoords = getPointInWorldSpace(upEvent);
                 const newX = worldUpCoords.x - currentDragInfo.offsetX;
                 const newY = worldUpCoords.y - currentDragInfo.offsetY;
 
-                onUpdateNexusLayout(layout => ({
-                    links: layout?.links || [],
-                    notePositions: (layout?.notePositions || []).map(p =>
-                        p.userNoteId === currentDragInfo.noteId ? { ...p, x: newX, y: newY } : p
-                    ),
-                }));
+                // Only update if position actually changed significantly
+                const currentPosition = notePositions.get(currentDragInfo.noteId);
+                if (currentPosition && (Math.abs(currentPosition.x - newX) > 5 || Math.abs(currentPosition.y - newY) > 5)) {
+                    onUpdateNexusLayout(layout => ({
+                        links: layout?.links || [],
+                        notePositions: (layout?.notePositions || []).map(p =>
+                            p.userNoteId === currentDragInfo.noteId ? { ...p, x: newX, y: newY } : p
+                        ),
+                    }));
+                }
                 
                 noteCardElement.classList.remove('active:cursor-grabbing');
             }
 
             // Reset drag info and clear live position for the next interaction
-            dragInfo.current = null;
+            if (dragInfo.current?.noteId === noteId) {
+                dragInfo.current = null;
+            }
             setDraggedNotePosition(null);
         };
         
         window.addEventListener('pointermove', handlePointerMove);
-        window.addEventListener('pointerup', handlePointerUp, { once: true });
+        window.addEventListener('pointerup', handlePointerUp);
     };
 
     const handleLinkStart = (e: React.PointerEvent, noteId: string) => {

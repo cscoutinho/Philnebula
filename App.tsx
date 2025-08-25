@@ -254,11 +254,17 @@ const App: React.FC = () => {
     const allUserNotesWithNodeInfo = useMemo(() => {
         if (!activeProjectData) return [];
         const notes: (UserNote & { mapNodeId: string | number, mapNodeName: string })[] = [];
+        const seenNoteIds = new Set<string>();
+        
         activeProjectData.maps.forEach(map => {
             map.layout.nodes.forEach(node => {
                 if (node.userNotes) {
                     node.userNotes.forEach(un => {
-                        notes.push({ ...un, mapNodeId: node.id, mapNodeName: node.name });
+                        // Only add if we haven't seen this note ID before
+                        if (!seenNoteIds.has(un.id)) {
+                            seenNoteIds.add(un.id);
+                            notes.push({ ...un, mapNodeId: node.id, mapNodeName: node.name });
+                        }
                     });
                 }
             });
