@@ -5,7 +5,7 @@ import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import 'd3-transition';
 import type { MapNode, MapLink, MapBuilderProps, LogicalWorkbenchState, KindleNote } from '../../../types';
 
-interface useMapInteractionProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace' | 'onAppendToNodeNotes'> {
+interface useMapInteractionProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace' | 'onAppendToNodeNotes' | 'focusNodeId' | 'onFocusComplete'> {
     svgRef: React.RefObject<SVGSVGElement>;
     uiState: ReturnType<typeof import('./useMapUI').useMapUI>;
     aiState: ReturnType<typeof import('./useMapAI').useMapAI>;
@@ -29,6 +29,8 @@ export const useMapInteraction = ({
     setDropTargetNodeId,
     notesToPlace,
     onClearNotesToPlace,
+    focusNodeId,
+    onFocusComplete,
 }: useMapInteractionProps) => {
     const {
         clearSelections,
@@ -364,6 +366,30 @@ export const useMapInteraction = ({
         }
         
     }, [nodes, resizingState, regionSelectedNodeIds, setLayout, setRegionSelectedNodeIds, setSelectedNodeId, uiState, updateNodePosition, svgRef, notesToPlace, setDropTargetNodeId, handleNodeTap]);
+    
+    useEffect(() => {
+        if (focusNodeId && onFocusComplete && svgRef.current && zoomBehaviorRef.current) {
+            const node = nodeMap.get(focusNodeId);
+            if (!node) {
+                onFocusComplete();
+                return;
+            }
+            
+            const svg = select(svgRef.current);
+            const { width, height } = svg.node()!.getBoundingClientRect();
+            
+            const k = 1.5; // Zoom level to focus on
+            const x = width / 2 - node.x * k;
+            const y = height / 2 - node.y * k;
+
+            const newTransform = zoomIdentity.translate(x, y).scale(k);
+
+            (svg as any)
+              .transition().duration(750)
+              .call(zoomBehaviorRef.current.transform, newTransform)
+              .on("end", onFocusComplete);
+        }
+    }, [focusNodeId, onFocusComplete, svgRef, nodeMap]);
 
     const handleDrop = (e: React.DragEvent<SVGSVGElement>) => {
         e.preventDefault();

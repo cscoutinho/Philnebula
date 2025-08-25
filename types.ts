@@ -5,6 +5,7 @@
 
 
 
+
 export interface RawNode {
   id: number;
   name: string;
@@ -408,6 +409,8 @@ export interface MapBuilderProps {
     notesToPlace: KindleNote[] | null;
     onClearNotesToPlace: () => void;
     onOpenStudio: (nodeId: string | number, x: number, y: number) => void;
+    focusNodeId?: (string | number) | null;
+    onFocusComplete?: () => void;
 }
 
 export interface NodeContextMenuState {

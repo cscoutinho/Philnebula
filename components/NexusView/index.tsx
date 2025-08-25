@@ -5,7 +5,12 @@ import { AppSessionData, UserNote, AppTag } from '../../types';
 import { BrainCircuit, LinkIcon, Edit, Trash2, X, Check, Search, ChevronLeft, ChevronRight } from '../icons';
 import ProjectSwitcher from '../ProjectSwitcher';
 
-type NexusNote = UserNote & { mapNodeId: string | number; mapNodeName: string };
+type NexusNote = UserNote & { 
+    mapNodeId: string | number; 
+    mapNodeName: string; 
+    mapId: string;
+    mapName: string;
+};
 type NotePosition = { userNoteId: string; x: number; y: number; width: number; height: number; };
 
 interface NexusViewProps {
@@ -26,6 +31,7 @@ interface NexusViewProps {
     onDeleteProject: (projectId: string) => void;
     onRenameProject: (projectId: string, newName: string) => void;
     onRequestConfirmation: any;
+    onNavigateToMapNode: (mapId: string, nodeId: string | number) => void;
 }
 
 interface NoteCardProps { 
@@ -38,9 +44,10 @@ interface NoteCardProps {
     onLinkEnd: (e: React.PointerEvent, noteId: string) => void;
     isLinking: boolean;
     onTagClick: (tagId: string) => void;
+    onNavigateToMapNode: (mapId: string, nodeId: string | number) => void;
 }
 
-const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick, onPointerDown, onLinkStart, onLinkEnd, isLinking, onTagClick }) => {
+const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick, onPointerDown, onLinkStart, onLinkEnd, isLinking, onTagClick, onNavigateToMapNode }) => {
     const noteTags = useMemo(() => {
         const tagMap = new Map(tags.map(t => [t.id, t]));
         return (note.tagIds || []).map(id => tagMap.get(id)).filter((t): t is AppTag => !!t);
@@ -92,7 +99,20 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick
                         </button>
                     ))}
                 </div>
-                <p className="text-xs text-cyan-400 mt-2 truncate pointer-events-none">From: {note.mapNodeName}</p>
+                <p className="text-xs text-cyan-400 mt-2 truncate pointer-events-none">
+                    From: <button
+                        className="font-semibold text-cyan-300 hover:underline pointer-events-auto focus:outline-none"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onNavigateToMapNode(note.mapId, note.mapNodeId);
+                        }}
+                    >
+                        {note.mapName}
+                    </button>
+                    <span className="text-gray-500 mx-1" aria-hidden="true">&gt;</span>
+                    {note.mapNodeName}
+                </p>
             </div>
         </div>
     );
@@ -222,7 +242,8 @@ const SidePanel: React.FC<{
 const NexusView: React.FC<NexusViewProps> = ({ 
     allUserNotes: rawAllUserNotes, activeProjectData, updateActiveProjectData, onOpenStudioForNexusNote, 
     focusNoteId, onClearFocusNote, focusTagId, onClearFocusTag, onUpdateNexusLayout, onUpdateTags,
-    session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation
+    session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation,
+    onNavigateToMapNode
 }) => {
     // Deduplicate notes by ID to prevent double counting in tags
     const allUserNotes = useMemo(() => {
@@ -375,8 +396,8 @@ const NexusView: React.FC<NexusViewProps> = ({
     }, [linkingState, getPointInWorldSpace]);
 
     const handleNotePointerDown = (e: React.PointerEvent, noteId: string) => {
-        // Prevent starting a drag if a link is being created or it's not a primary click
-        if (e.button !== 0 || linkingState) return;
+        // Prevent starting a drag if a link is being created, it's not a primary click, or the target is a button.
+        if (e.button !== 0 || linkingState || (e.target as HTMLElement).closest('button')) return;
         
         const noteCardElement = e.currentTarget as HTMLElement;
         const position = notePositions.get(noteId);
@@ -590,6 +611,7 @@ const NexusView: React.FC<NexusViewProps> = ({
                                         onLinkEnd={handleLinkEnd}
                                         isLinking={!!linkingState}
                                         onTagClick={handleNoteCardTagClick}
+                                        onNavigateToMapNode={onNavigateToMapNode}
                                     />
                                 </div>
                             )

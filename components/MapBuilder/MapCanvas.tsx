@@ -5,7 +5,7 @@ import LinkComponent from './LinkComponent';
 import { LassoIcon, SparkleIcon, FlaskConicalIcon, HelpCircleIcon, Trash2, BrainCircuit, X } from '../icons';
 import { MapBuilderProps, RelationshipTypeInfo, MapNode, KindleNote, SocraticSuggestion } from '../../types';
 
-interface MapCanvasProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'relationshipTypes' | 'allNodes' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace' | 'onAppendToNodeNotes'> {
+interface MapCanvasProps extends Pick<MapBuilderProps, 'layout' | 'setLayout' | 'logActivity' | 'relationshipTypes' | 'allNodes' | 'onAddNoteToMap' | 'onAddMultipleNotesToMap' | 'notesToPlace' | 'onClearNotesToPlace' | 'onAppendToNodeNotes' | 'focusNodeId' | 'onFocusComplete'> {
     relationshipColorMap: Record<string, string>;
     uiState: ReturnType<typeof import('./hooks/useMapUI').useMapUI>;
     aiState: ReturnType<typeof import('./hooks/useMapAI').useMapAI>;
@@ -29,6 +29,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
     onSuggestionClick,
     notesToPlace,
     onClearNotesToPlace,
+    focusNodeId,
+    onFocusComplete,
 }) => {
     const { nodes, links, logicalConstructs } = layout;
     const nodeMap = useMemo(() => new Map<string | number, MapNode>(nodes.map(n => [n.id, n])), [nodes]);
@@ -64,6 +66,8 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         setDropTargetNodeId,
         notesToPlace,
         onClearNotesToPlace,
+        focusNodeId,
+        onFocusComplete,
     });
 
     const regionActionPos = useMemo(() => {

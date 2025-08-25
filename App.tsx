@@ -192,6 +192,7 @@ const App: React.FC = () => {
     const [notesToPlace, setNotesToPlace] = useState<KindleNote[] | null>(null);
     const [nexusFocusNoteId, setNexusFocusNoteId] = useState<string | null>(null);
     const [nexusFilterTagId, setNexusFilterTagId] = useState<string | null>(null);
+    const [focusMapNode, setFocusMapNode] = useState<{mapId: string, nodeId: string | number} | null>(null);
 
     // Unified Studio Panel State
     type StudioState = {
@@ -253,7 +254,7 @@ const App: React.FC = () => {
 
     const allUserNotesWithNodeInfo = useMemo(() => {
         if (!activeProjectData) return [];
-        const notes: (UserNote & { mapNodeId: string | number, mapNodeName: string })[] = [];
+        const notes: (UserNote & { mapNodeId: string | number, mapNodeName: string, mapId: string, mapName: string })[] = [];
         const seenNoteIds = new Set<string>();
         
         activeProjectData.maps.forEach(map => {
@@ -263,7 +264,7 @@ const App: React.FC = () => {
                         // Only add if we haven't seen this note ID before
                         if (!seenNoteIds.has(un.id)) {
                             seenNoteIds.add(un.id);
-                            notes.push({ ...un, mapNodeId: node.id, mapNodeName: node.name });
+                            notes.push({ ...un, mapNodeId: node.id, mapNodeName: node.name, mapId: map.id, mapName: map.name });
                         }
                     });
                 }
@@ -415,6 +416,14 @@ const App: React.FC = () => {
         setNexusFilterTagId(tagId);
         setCurrentView('nexus');
     }, []);
+
+    const handleNavigateToMapNode = useCallback((mapId: string, nodeId: string | number) => {
+        if (activeMap?.id !== mapId) {
+            handleSwitchMap(mapId);
+        }
+        setCurrentView('map');
+        setFocusMapNode({ mapId, nodeId });
+    }, [handleSwitchMap, activeMap?.id]);
 
     // --- Research Analysis Handler ---
     const handleAnalyzeResearchTrends = useCallback(async (feed: TrackedFeed) => {
@@ -955,6 +964,8 @@ const App: React.FC = () => {
                         notesToPlace={notesToPlace}
                         onClearNotesToPlace={handleClearNotesToPlace}
                         onOpenStudio={handleOpenStudioForMapNode}
+                        focusNodeId={focusMapNode?.mapId === activeMap?.id ? focusMapNode.nodeId : null}
+                        onFocusComplete={() => setFocusMapNode(null)}
                     />
                 );
             case 'feed':
@@ -991,6 +1002,7 @@ const App: React.FC = () => {
                         onDeleteProject={handleDeleteProject}
                         onRenameProject={handleRenameProject}
                         onRequestConfirmation={requestConfirmation}
+                        onNavigateToMapNode={handleNavigateToMapNode}
                     />
                 );
             default: return null;

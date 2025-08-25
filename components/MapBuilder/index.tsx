@@ -1,4 +1,5 @@
 
+
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import type { D3Node, Citation, MapLink, MapBuilderProps, FloatingTooltipState, LogicalWorkbenchState, RelationshipTypeInfo, BeliefConfirmationState, KindleNote, ConfirmationRequestHandler, UserNote } from '../../types';
@@ -148,6 +149,8 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
     notesToPlace,
     onClearNotesToPlace,
     onOpenStudio,
+    focusNodeId,
+    onFocusComplete,
 }) => {
     const { nodes, links } = layout;
     const ai = useMemo(() => new GoogleGenAI({ apiKey: process.env.API_KEY! }), []);
@@ -297,6 +300,8 @@ const MapBuilder: React.FC<MapBuilderProps> = ({
                 onSuggestionClick={(suggestion) => aiHooks.handleSocraticAction(suggestion, suggestion.availableActions[0])}
                 notesToPlace={notesToPlace}
                 onClearNotesToPlace={onClearNotesToPlace}
+                focusNodeId={focusNodeId}
+                onFocusComplete={onFocusComplete}
             />
 
             <MapToolbar
