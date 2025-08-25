@@ -1,8 +1,9 @@
+
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { select, pointer } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import { AppSessionData, UserNote, AppTag } from '../../types';
-import { BrainCircuit, LinkIcon, Edit, Trash2, X, Check, Search, ChevronLeft, ChevronRight } from '../icons';
+import { BrainCircuit, LinkIcon, Edit, Trash2, X, Check, Search, ChevronLeft, ChevronRight, ChevronsUpDown } from '../icons';
 import ProjectSwitcher from '../ProjectSwitcher';
 
 type NexusNote = UserNote & { 
@@ -118,6 +119,8 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick
     );
 };
 
+type ContextFilter = { type: 'map' | 'concept', id: string | number } | null;
+
 const SidePanel: React.FC<{ 
     tags: AppTag[];
     onUpdateTags: (tags: AppTag[]) => void;
@@ -135,7 +138,16 @@ const SidePanel: React.FC<{
     onRenameProject: (projectId: string, newName: string) => void;
     onRequestConfirmation: any;
     tagCounts: Map<string, number>;
-}> = ({ tags, onUpdateTags, searchQuery, setSearchQuery, selectedTagIds, setSelectedTagIds, isCollapsed, onToggleCollapse, session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation, tagCounts }) => {
+    maps: AppSessionData['maps'];
+    conceptsWithNotesByMap: Map<string, { mapName: string, concepts: { id: string | number, name: string, noteCount: number }[] }>;
+    selectedContextFilter: ContextFilter;
+    onSetContextFilter: (filter: ContextFilter) => void;
+    noteCountsByMap: Map<string, number>;
+}> = ({ 
+    tags, onUpdateTags, searchQuery, setSearchQuery, selectedTagIds, setSelectedTagIds, isCollapsed, onToggleCollapse, 
+    session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation, 
+    tagCounts, maps, conceptsWithNotesByMap, selectedContextFilter, onSetContextFilter, noteCountsByMap
+}) => {
     const [editingTag, setEditingTag] = useState<AppTag | null>(null);
 
     const handleUpdateTag = () => {
@@ -199,38 +211,79 @@ const SidePanel: React.FC<{
                             />
                         </div>
                     </div>
-                    <div className="flex-grow overflow-y-auto px-4">
-                        <h3 className="text-lg font-semibold text-gray-300 mb-2">Tags</h3>
-                        <ul className="space-y-1.5">
-                            {tags.map(tag => (
-                                <li key={tag.id} className="group flex items-center justify-between text-sm">
-                                    {editingTag?.id === tag.id ? (
-                                        <div className="flex items-center gap-1 w-full">
-                                            <input type="color" value={editingTag.color} onChange={e => setEditingTag({...editingTag, color: e.target.value})} className="w-6 h-6 p-0.5 bg-transparent border-none rounded"/>
-                                            <input type="text" value={editingTag.name} onChange={e => setEditingTag({...editingTag, name: e.target.value})} className="flex-grow bg-gray-700 rounded px-1.5 py-0.5 text-xs"/>
-                                            <button onClick={handleUpdateTag} className="p-1 text-green-400"><Check className="w-4 h-4"/></button>
-                                            <button onClick={() => setEditingTag(null)} className="p-1 text-red-400"><X className="w-4 h-4"/></button>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <button onClick={() => toggleTagFilter(tag.id)} className={`flex items-center gap-2 flex-grow text-left p-1 rounded ${selectedTagIds.has(tag.id) ? 'bg-cyan-800/80' : ''}`}>
-                                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
-                                                <span className="truncate">{tag.name}</span>
-                                            </button>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-mono bg-gray-700 text-gray-300 rounded-full w-6 h-6 flex items-center justify-center">
-                                                    {tagCounts.get(tag.id) || 0}
-                                                </span>
-                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={() => setEditingTag(tag)} className="p-1 text-gray-400 hover:text-cyan-400"><Edit className="w-4 h-4"/></button>
-                                                    <button onClick={() => handleDeleteTag(tag.id)} className="p-1 text-gray-400 hover:text-red-400"><Trash2 className="w-4 h-4"/></button>
-                                                </div>
-                                            </div>
-                                        </>
-                                    )}
+                    <div className="flex-grow overflow-y-auto px-4 space-y-4">
+                         {/* Context Filters */}
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-300 mb-2">Context Filters</h3>
+                            <ul className="space-y-1 text-sm">
+                                <li>
+                                    <button onClick={() => onSetContextFilter(null)} className={`w-full text-left p-1.5 rounded flex items-center justify-between ${!selectedContextFilter ? 'bg-cyan-800/80' : 'hover:bg-gray-700/70'}`}>
+                                        <span>All Notes</span>
+                                    </button>
                                 </li>
-                            ))}
-                        </ul>
+                                {maps.map(map => (
+                                     <li key={map.id}>
+                                         <details open className="group">
+                                             <summary className={`list-none flex items-center justify-between p-1.5 rounded cursor-pointer ${selectedContextFilter?.type === 'map' && selectedContextFilter.id === map.id ? 'bg-cyan-800/80' : 'hover:bg-gray-700/70'}`}>
+                                                <span onClick={(e) => { e.preventDefault(); onSetContextFilter({ type: 'map', id: map.id }); }} className="flex-grow">{map.name}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-mono bg-gray-700 text-gray-300 rounded-full w-6 h-6 flex items-center justify-center">
+                                                        {noteCountsByMap.get(map.id) || 0}
+                                                    </span>
+                                                    <ChevronsUpDown className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" />
+                                                </div>
+                                            </summary>
+                                            <ul className="pl-4 mt-1 space-y-1">
+                                                {(conceptsWithNotesByMap.get(map.id)?.concepts || []).map(concept => (
+                                                    <li key={concept.id}>
+                                                        <button onClick={() => onSetContextFilter({ type: 'concept', id: concept.id })} className={`w-full text-left p-1.5 rounded flex items-center justify-between text-xs ${selectedContextFilter?.type === 'concept' && selectedContextFilter.id === concept.id ? 'bg-cyan-800/60' : 'hover:bg-gray-700/50'}`}>
+                                                            <span className="truncate">{concept.name}</span>
+                                                            <span className="text-xs font-mono bg-gray-700/80 text-gray-400 rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+                                                                {concept.noteCount}
+                                                            </span>
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                         </details>
+                                     </li>
+                                ))}
+                            </ul>
+                        </div>
+                        {/* Tags */}
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-300 mb-2">Tags</h3>
+                            <ul className="space-y-1.5">
+                                {tags.map(tag => (
+                                    <li key={tag.id} className="group flex items-center justify-between text-sm">
+                                        {editingTag?.id === tag.id ? (
+                                            <div className="flex items-center gap-1 w-full">
+                                                <input type="color" value={editingTag.color} onChange={e => setEditingTag({...editingTag, color: e.target.value})} className="w-6 h-6 p-0.5 bg-transparent border-none rounded"/>
+                                                <input type="text" value={editingTag.name} onChange={e => setEditingTag({...editingTag, name: e.target.value})} className="flex-grow bg-gray-700 rounded px-1.5 py-0.5 text-xs"/>
+                                                <button onClick={handleUpdateTag} className="p-1 text-green-400"><Check className="w-4 h-4"/></button>
+                                                <button onClick={() => setEditingTag(null)} className="p-1 text-red-400"><X className="w-4 h-4"/></button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <button onClick={() => toggleTagFilter(tag.id)} className={`flex items-center gap-2 flex-grow text-left p-1 rounded ${selectedTagIds.has(tag.id) ? 'bg-cyan-800/80' : ''}`}>
+                                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
+                                                    <span className="truncate">{tag.name}</span>
+                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-mono bg-gray-700 text-gray-300 rounded-full w-6 h-6 flex items-center justify-center">
+                                                        {tagCounts.get(tag.id) || 0}
+                                                    </span>
+                                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button onClick={() => setEditingTag(tag)} className="p-1 text-gray-400 hover:text-cyan-400"><Edit className="w-4 h-4"/></button>
+                                                        <button onClick={() => handleDeleteTag(tag.id)} className="p-1 text-gray-400 hover:text-red-400"><Trash2 className="w-4 h-4"/></button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     </div>
                 </>
             )}
@@ -265,6 +318,7 @@ const NexusView: React.FC<NexusViewProps> = ({
     }, [rawAllUserNotes]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
+    const [selectedContextFilter, setSelectedContextFilter] = useState<ContextFilter>(null);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [zoomLevel, setZoomLevel] = useState(1);
     const [zoomTransform, setZoomTransform] = useState({ x: 0, y: 0, k: 1 });
@@ -325,10 +379,53 @@ const NexusView: React.FC<NexusViewProps> = ({
 
             const tagMatch = selectedTagIds.size === 0 || 
                 (note.tagIds || []).some(tagId => selectedTagIds.has(tagId));
+
+            const contextMatch = !selectedContextFilter ||
+                (selectedContextFilter.type === 'map' && note.mapId === selectedContextFilter.id) ||
+                (selectedContextFilter.type === 'concept' && note.mapNodeId === selectedContextFilter.id);
                 
-            return searchMatch && tagMatch;
+            return searchMatch && tagMatch && contextMatch;
         });
-    }, [allUserNotes, searchQuery, selectedTagIds]);
+    }, [allUserNotes, searchQuery, selectedTagIds, selectedContextFilter]);
+
+    const conceptsWithNotesByMap = useMemo(() => {
+        const result = new Map<string, { mapName: string, concepts: { id: string | number, name: string, noteCount: number }[] }>();
+        const conceptNoteCounts = new Map<string | number, number>();
+
+        for (const note of allUserNotes) {
+            conceptNoteCounts.set(note.mapNodeId, (conceptNoteCounts.get(note.mapNodeId) || 0) + 1);
+
+            if (!result.has(note.mapId)) {
+                result.set(note.mapId, { mapName: note.mapName, concepts: [] });
+            }
+        }
+        
+        const conceptsAdded = new Set<string | number>();
+        for (const note of allUserNotes) {
+            if (!conceptsAdded.has(note.mapNodeId)) {
+                const mapData = result.get(note.mapId);
+                if (mapData) {
+                    mapData.concepts.push({ id: note.mapNodeId, name: note.mapNodeName, noteCount: conceptNoteCounts.get(note.mapNodeId) || 0 });
+                    conceptsAdded.add(note.mapNodeId);
+                }
+            }
+        }
+        
+        // Sort concepts within each map
+        result.forEach(mapData => {
+            mapData.concepts.sort((a, b) => a.name.localeCompare(b.name));
+        });
+
+        return result;
+    }, [allUserNotes]);
+
+    const noteCountsByMap = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const note of allUserNotes) {
+            counts.set(note.mapId, (counts.get(note.mapId) || 0) + 1);
+        }
+        return counts;
+    }, [allUserNotes]);
 
     const tagCounts = useMemo(() => {
         const counts = new Map<string, number>();
@@ -544,6 +641,11 @@ const NexusView: React.FC<NexusViewProps> = ({
                 onRenameProject={onRenameProject}
                 onRequestConfirmation={onRequestConfirmation}
                 tagCounts={tagCounts}
+                maps={activeProjectData.maps || []}
+                conceptsWithNotesByMap={conceptsWithNotesByMap}
+                selectedContextFilter={selectedContextFilter}
+                onSetContextFilter={setSelectedContextFilter}
+                noteCountsByMap={noteCountsByMap}
             />
             
             <main ref={canvasRef} className="flex-grow h-full relative overflow-hidden">
