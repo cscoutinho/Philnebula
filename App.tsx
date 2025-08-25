@@ -1,7 +1,3 @@
-
-
-
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { parseMarkdown, flattenData } from './services/dataParser';
@@ -25,7 +21,7 @@ import { useSessionManager } from './hooks/useSessionManager';
 import { useFeedManager } from './hooks/useFeedManager';
 import { useNebula } from './hooks/useNebula';
 import { useBeliefFlipChallenge } from './hooks/useBeliefFlipChallenge';
-import StudioPanel from './components/MapBuilder/Panels/StudioPanel';
+import StudioPanel from './components/StudioPanel';
 import NotesInbox from './components/NotesInbox';
 import NexusView from './components/NexusView';
 import * as mapBuilderService from './services/mapBuilderService';
@@ -123,6 +119,14 @@ const cleanupOrphanedTags = (projectData: AppSessionData): AppSessionData => {
     return { ...projectData, tags: cleanedTags };
 };
 
+const escapeHtml = (unsafe: string) => {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+};
 
 const App: React.FC = () => {
     // Core Data
@@ -490,6 +494,49 @@ const App: React.FC = () => {
 
     const handleUpdateUserNote = useCallback((updatedNote: UserNote) => {
         updateActiveProjectData(d => {
+            let mapsWithTitleUpdates = d.maps;
+    
+            // Find the original note to check for title change
+            let originalNote: UserNote | undefined;
+            for (const map of d.maps) {
+                for (const node of map.layout.nodes) {
+                    originalNote = node.userNotes?.find(un => un.id === updatedNote.id);
+                    if (originalNote) break;
+                }
+                if (originalNote) break;
+            }
+            
+            // If title has changed, update all links pointing to this note that are not aliases
+            if (originalNote && originalNote.title !== updatedNote.title) {
+                const tempDiv = document.createElement('div');
+                mapsWithTitleUpdates = d.maps.map(map => ({
+                    ...map,
+                    layout: {
+                        ...map.layout,
+                        nodes: map.layout.nodes.map(node => ({
+                            ...node,
+                            userNotes: (node.userNotes || []).map(noteToScan => {
+                                if (noteToScan.content.includes(`data-note-id="${updatedNote.id}"`)) {
+                                    tempDiv.innerHTML = noteToScan.content;
+                                    const linksToUpdate = tempDiv.querySelectorAll<HTMLSpanElement>(`span.nexus-link[data-note-id="${updatedNote.id}"]`);
+                                    let contentChanged = false;
+                                    linksToUpdate.forEach(linkEl => {
+                                        if (!linkEl.hasAttribute('data-alias')) {
+                                            linkEl.innerHTML = escapeHtml(updatedNote.title);
+                                            contentChanged = true;
+                                        }
+                                    });
+                                    if (contentChanged) {
+                                        return { ...noteToScan, content: tempDiv.innerHTML };
+                                    }
+                                }
+                                return noteToScan;
+                            })
+                        }))
+                    }
+                }));
+            }
+    
             // Parse content for tags
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = updatedNote.content;
@@ -506,17 +553,14 @@ const App: React.FC = () => {
             const newTagsToAdd: AppTag[] = [];
             const finalNoteTagIds = new Set<string>();
     
-            // Process found tags
             foundTagNames.forEach(tagName => {
                 const normalizedTagName = tagName.toLowerCase();
                 let existingTag = projectTags.find(t => t.name.toLowerCase() === normalizedTagName);
-                
                 if (!existingTag) {
-                    // Create new tag if it doesn't exist
                     const newTag: AppTag = {
                         id: `tag_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
                         name: tagName,
-                        color: '#6366f1', // Standard default color (indigo-500)
+                        color: '#6366f1',
                     };
                     newTagsToAdd.push(newTag);
                     finalNoteTagIds.add(newTag.id);
@@ -528,18 +572,7 @@ const App: React.FC = () => {
             const finalProjectTags = [...projectTags, ...newTagsToAdd];
             const finalUpdatedNote = { ...updatedNote, tagIds: Array.from(finalNoteTagIds) };
             
-            // --- Nexus Link Parsing ---
-            const nexusLinks: { sourceNoteId: string; targetNoteId: string; }[] = [];
-            const linkSpans = tempDiv.querySelectorAll('span.nexus-link[data-note-id]');
-            linkSpans.forEach(span => {
-                const targetId = span.getAttribute('data-note-id');
-                if (targetId) {
-                    nexusLinks.push({ sourceNoteId: updatedNote.id, targetNoteId: targetId });
-                }
-            });
-
-            // Update project data with the modified note and possibly new tags
-            let newMaps = d.maps.map(m => ({
+            let newMaps = mapsWithTitleUpdates.map(m => ({
                 ...m,
                 layout: {
                     ...m.layout,
@@ -552,7 +585,6 @@ const App: React.FC = () => {
                 }
             }));
             
-            // Rebuild all nexus links to ensure consistency
             const allNexusLinks: { sourceNoteId: string; targetNoteId: string; }[] = [];
             const parserDiv = document.createElement('div');
             newMaps.forEach(m => {
@@ -568,13 +600,13 @@ const App: React.FC = () => {
                     });
                 });
             });
-
+    
             const projectWithUpdates = { 
                 ...d, 
                 maps: newMaps, 
                 tags: finalProjectTags,
                 nexusLayout: {
-                    ...d.nexusLayout,
+                    ...(d.nexusLayout || { notePositions: [] }),
                     links: allNexusLinks,
                 }
             };

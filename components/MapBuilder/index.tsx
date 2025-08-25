@@ -1,5 +1,4 @@
 
-
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import type { D3Node, Citation, MapLink, MapBuilderProps, FloatingTooltipState, LogicalWorkbenchState, RelationshipTypeInfo, BeliefConfirmationState, KindleNote, ConfirmationRequestHandler, UserNote } from '../../types';
@@ -21,7 +20,6 @@ import { useFloatingPosition } from './utils/positioning';
 import NodeComponent from './NodeComponent';
 import LinkComponent from './LinkComponent';
 import DefinitionAnalysisPanel from './Panels/DefinitionAnalysisPanel';
-import StudioPanel from './Panels/StudioPanel';
 import BeliefConfirmationPanel from './Panels/BeliefConfirmationPanel';
 
 

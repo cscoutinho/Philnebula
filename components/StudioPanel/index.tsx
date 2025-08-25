@@ -61,7 +61,7 @@ interface StudioPanelProps {
     onLogEdit: (nodeId: string | number, noteTitle: string) => void;
 
     // Context for AI assistant
-    allProjectNotes: (UserNote & { mapNodeId: string | number; mapNodeName: string; })[];
+    allProjectNotes: (UserNote & { mapNodeId: string | number; mapNodeName: string; mapId: string; mapName: string; })[];
     allProjectTags: AppTag[];
     onUpdateTags: (tags: AppTag[]) => void;
     onNavigateToNexusTag: (tagId: string) => void;
@@ -686,7 +686,7 @@ Text: "${analysisText}"`;
                             key={editingNoteId}
                             note={noteToEdit}
                             onSave={(id, title, content) => {
-                                const isNewNote = noteToEdit.createdAt === noteToEdit.updatedAt;
+                                const isNewNote = !initialUserNotes.some(n => n.id === id);
                                 handleUpdateNote(id, title, content);
                                 
                                 if (isNewNote) {
@@ -737,7 +737,7 @@ const EditableNoteCard: React.FC<{
     ai: GoogleGenAI;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
     nodeName: string;
-    allProjectNotes: UserNote[];
+    allProjectNotes: (UserNote & { mapNodeId: string | number; mapNodeName: string; mapId: string; mapName: string; })[];
     onNavigateToNexusNote: (noteId: string) => void;
 }> = ({ note, onSave, onDelete, onCancel, onAiSelection, ai, logActivity, nodeName, allProjectNotes, onNavigateToNexusNote }) => {
     const [title, setTitle] = useState(note.title);
@@ -750,26 +750,21 @@ const EditableNoteCard: React.FC<{
     const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
-
-    const [linkSearch, setLinkSearch] = useState<{ query: string; range: Range; position: { top: number, left: number } } | null>(null);
     
+    type LinkSearchState = { query: string; alias?: string; range: Range; position: { top: number, left: number } };
+    const [linkSearch, setLinkSearch] = useState<LinkSearchState | null>(null);
+
     const linkResults = useMemo(() => {
         if (!linkSearch || !linkSearch.query.trim()) return [];
-
         const query = linkSearch.query.trim().toLowerCase();
 
         const getScore = (title: string): number => {
             const lowerTitle = title.toLowerCase();
-
-            if (lowerTitle === query) return 10; // Exact match
-            if (lowerTitle.startsWith(query)) return 5; // Starts with
-
-            // To create a word boundary regex, we need to escape special characters.
+            if (lowerTitle === query) return 10;
+            if (lowerTitle.startsWith(query)) return 5;
             const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-            if (new RegExp(`\\b${escapedQuery}\\b`).test(lowerTitle)) return 3; // Whole word
-            
-            if (lowerTitle.includes(query)) return 1; // Substring
-
+            if (new RegExp(`\\b${escapedQuery}\\b`).test(lowerTitle)) return 3;
+            if (lowerTitle.includes(query)) return 1;
             return 0;
         };
 
@@ -778,19 +773,43 @@ const EditableNoteCard: React.FC<{
             .map(n => ({ note: n, score: getScore(n.title) }))
             .filter(item => item.score > 0)
             .sort((a, b) => {
-                if (a.score !== b.score) {
-                    return b.score - a.score; // Higher score first
-                }
-                // Tie-breaker 1: shorter title is better
-                if (a.note.title.length !== b.note.title.length) {
-                    return a.note.title.length - b.note.title.length;
-                }
-                // Tie-breaker 2: alphabetical
-                return a.note.title.localeCompare(b.note.title);
+                if (a.score !== b.score) return b.score - a.score;
+                return a.note.title.length - b.note.title.length;
             })
-            .slice(0, 5)
+            .slice(0, 10)
             .map(item => item.note);
     }, [linkSearch, allProjectNotes, note.id]);
+
+    const backlinks = useMemo(() => {
+        const linkedFrom: { note: (UserNote & {mapNodeName: string}), context: string, linkText: string }[] = [];
+        const regex = new RegExp(`<span class="nexus-link"[^>]*data-note-id="${note.id}"[^>]*>(.*?)<\\/span>`, 'g');
+        
+        for (const projectNote of allProjectNotes) {
+            if (projectNote.id === note.id) continue;
+            
+            let match;
+            let found = false;
+            while ((match = regex.exec(projectNote.content)) !== null) {
+                if(!found) {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = projectNote.content;
+                    const plainText = tempDiv.textContent || '';
+                    const linkText = match[1];
+
+                    const snippetIndex = plainText.indexOf(linkText);
+                    let context = plainText;
+                    if (snippetIndex !== -1) {
+                        const start = Math.max(0, snippetIndex - 40);
+                        const end = Math.min(plainText.length, snippetIndex + linkText.length + 40);
+                        context = (start > 0 ? '...' : '') + plainText.substring(start, end) + (end < plainText.length ? '...' : '');
+                    }
+                    linkedFrom.push({ note: projectNote, context, linkText });
+                    found = true; 
+                }
+            }
+        }
+        return linkedFrom;
+    }, [allProjectNotes, note.id]);
 
 
     const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -862,19 +881,15 @@ const EditableNoteCard: React.FC<{
                     if (transcription && editorRef.current) {
                         const editor = editorRef.current;
                         editor.focus();
-
-                        // Move cursor to the end of the editor
                         const selection = window.getSelection();
                         if (selection) {
                             const range = document.createRange();
                             range.selectNodeContents(editor);
-                            range.collapse(false); // collapse to the end
+                            range.collapse(false);
                             selection.removeAllRanges();
                             selection.addRange(range);
                         }
-                        
                         const contentToInsert = `<p>${transcription}</p>`;
-
                         document.execCommand('insertHTML', false, contentToInsert);
                         setContent(editor.innerHTML, true);
                     }
@@ -938,19 +953,25 @@ const EditableNoteCard: React.FC<{
                 const textContent = textNode.textContent;
                 const match = textContent.substring(0, range.startOffset).match(/\[\[([^\]]*)$/);
                 if (match) {
-                    const query = match[1];
+                    const fullQuery = match[1];
+                    const [query, alias] = fullQuery.split('|');
                     const tempRange = document.createRange();
                     tempRange.setStart(textNode, match.index!);
                     tempRange.setEnd(textNode, range.startOffset);
                     
                     if (editorRef.current) {
-                        const editorRect = editorRef.current.getBoundingClientRect();
+                        const cardRoot = editorRef.current.closest('.editable-note-card-root');
+                        if (!cardRoot) return;
+
+                        const cardRootRect = cardRoot.getBoundingClientRect();
                         const rangeRect = tempRange.getBoundingClientRect();
+
                         const position = {
-                            top: rangeRect.bottom - editorRect.top,
-                            left: rangeRect.left - editorRect.left,
+                            top: rangeRect.bottom - cardRootRect.top,
+                            left: rangeRect.left - cardRootRect.left,
                         };
-                        setLinkSearch({ query, range: tempRange, position });
+                        
+                        setLinkSearch({ query, alias, range: tempRange, position });
                     }
                     return;
                 }
@@ -974,7 +995,7 @@ const EditableNoteCard: React.FC<{
         const editor = editorRef.current;
         editor.focus();
 
-        const { range } = linkSearch;
+        const { range, alias } = linkSearch;
         
         const selection = window.getSelection();
         if (!selection) return;
@@ -982,16 +1003,16 @@ const EditableNoteCard: React.FC<{
         selection.removeAllRanges();
         selection.addRange(range);
 
-        const linkElHtml = `<span class="nexus-link" data-note-id="${targetNote.id}" contenteditable="false">${escapeHtml(targetNote.title)}</span>&nbsp;`;
+        const displayText = (alias !== undefined && alias.trim() !== '') ? alias.trim() : targetNote.title;
+        const aliasAttr = (alias !== undefined && alias.trim() !== '') ? `data-alias="true"` : '';
+        const linkElHtml = `<span class="nexus-link" data-note-id="${targetNote.id}" ${aliasAttr} contenteditable="false">${escapeHtml(displayText)}</span>&nbsp;`;
         
         document.execCommand('insertHTML', false, linkElHtml);
 
         setLinkSearch(null);
-        
         setContent(editor.innerHTML, true);
     };
     
-    // Add click handler for nexus links
     useEffect(() => {
         const editor = editorRef.current;
         if (!editor) return;
@@ -1010,9 +1031,13 @@ const EditableNoteCard: React.FC<{
         editor.addEventListener('click', handleClick);
         return () => editor.removeEventListener('click', handleClick);
     }, [onNavigateToNexusNote]);
+    
+    const escapeRegExp = (string: string) => {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
 
     return (
-        <div className="flex-grow flex flex-col h-full relative">
+        <div className="flex-grow flex flex-col h-full relative editable-note-card-root">
             <div className="flex-shrink-0 p-2 border-b border-gray-700">
                 <input
                     type="text"
@@ -1080,18 +1105,19 @@ const EditableNoteCard: React.FC<{
             </div>
              {linkSearch && (
                 <div 
-                    className="absolute bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50 text-white text-sm w-64"
+                    className="absolute bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50 text-white text-sm w-72"
                     style={{
                         top: linkSearch.position.top + 5,
                         left: linkSearch.position.left,
                     }}
                 >
-                    <input type="text" readOnly value={`[[${linkSearch.query}`} className="w-full bg-gray-900 text-gray-400 px-2 py-1 rounded-t-md text-xs outline-none" />
-                    <ul className="max-h-40 overflow-y-auto">
+                    <input type="text" readOnly value={`[[${linkSearch.query}${linkSearch.alias !== undefined ? '|' + linkSearch.alias : ''}`} className="w-full bg-gray-900 text-gray-400 px-2 py-1 rounded-t-md text-xs outline-none" />
+                    <ul className="max-h-48 overflow-y-auto">
                         {linkResults.map(res => (
                             <li key={res.id}>
                                 <button onClick={() => insertNexusLink(res)} className="w-full text-left px-3 py-1.5 hover:bg-gray-700 rounded">
-                                    {res.title}
+                                    <p className="font-semibold truncate">{res.title}</p>
+                                    <p className="text-xs text-gray-400 truncate">in: {res.mapNodeName}</p>
                                 </button>
                             </li>
                         ))}
@@ -1099,11 +1125,31 @@ const EditableNoteCard: React.FC<{
                     </ul>
                 </div>
             )}
-             <div className="flex-shrink-0 p-2 border-t border-gray-700 flex justify-between items-center bg-gray-800/50">
+            <div className="flex-shrink-0 p-2 border-t border-gray-700 bg-gray-900/70">
+                <details className="text-sm">
+                    <summary className="cursor-pointer text-gray-400 font-semibold py-1 hover:text-white">
+                        Backlinks ({backlinks.length})
+                    </summary>
+                    <ul className="pl-2 pt-2 max-h-24 overflow-y-auto">
+                        {backlinks.length > 0 ? backlinks.map(({ note, context, linkText }) => {
+                             const highlightedContext = context.replace(new RegExp(escapeRegExp(linkText), 'i'), `<strong class="text-yellow-300 bg-yellow-500/20 px-1 rounded">${linkText}</strong>`);
+                             return (
+                                <li key={note.id} className="mb-3 last:mb-0">
+                                    <button onClick={() => { onCancel(); onNavigateToNexusNote(note.id); }} className="font-semibold text-cyan-300 hover:underline text-left">
+                                        {note.title}
+                                    </button>
+                                    <p className="text-xs text-gray-500 italic px-2 border-l-2 border-gray-600 ml-1 mt-1" dangerouslySetInnerHTML={{ __html: highlightedContext }} />
+                                </li>
+                             )
+                        }) : <li className="text-xs text-gray-500 italic">No linked mentions found.</li>}
+                    </ul>
+                </details>
+            </div>
+            <div className="flex-shrink-0 p-2 border-t border-gray-700 flex justify-between items-center bg-gray-800/50">
                 <button onClick={() => onDelete(note.id)} className="p-2 text-gray-400 hover:text-red-400 rounded-md"><Trash2 className="w-4 h-4"/></button>
                 <div className="flex gap-2">
                     <button onClick={onCancel} className="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">Cancel</button>
-                    <button onClick={() => onSave(note.id, title, editorRef.current?.innerHTML || content)} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-md">Save & Close Note</button>
+                    <button onClick={() => onSave(note.id, title, editorRef.current?.innerHTML || content)} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-md">Save & Close</button>
                 </div>
             </div>
         </div>
