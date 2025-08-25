@@ -46,18 +46,31 @@ interface NoteCardProps {
     isLinking: boolean;
     onTagClick: (tagId: string) => void;
     onNavigateToMapNode: (mapId: string, nodeId: string | number) => void;
+    isFocused: boolean;
 }
 
-const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick, onPointerDown, onLinkStart, onLinkEnd, isLinking, onTagClick, onNavigateToMapNode }) => {
+const hexToRgb = (hex: string): string => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result
+        ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`
+        : '6, 182, 212'; // Default to cyan-500
+};
+
+const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick, onPointerDown, onLinkStart, onLinkEnd, isLinking, onTagClick, onNavigateToMapNode, isFocused }) => {
     const noteTags = useMemo(() => {
         const tagMap = new Map(tags.map(t => [t.id, t]));
         return (note.tagIds || []).map(id => tagMap.get(id)).filter((t): t is AppTag => !!t);
     }, [note.tagIds, tags]);
+    
+    const firstTagColor = noteTags[0]?.color;
+    const glowColor = firstTagColor || '#06b6d4'; // Default to cyan-500
+    const glowRgb = hexToRgb(glowColor);
+
 
     return (
         <div
             data-note-id={note.id}
-            className="absolute bg-gray-800 p-4 rounded-lg border border-gray-600 shadow-lg transition-shadow duration-200 hover:shadow-cyan-500/20 hover:border-cyan-500 cursor-grab active:cursor-grabbing flex flex-col select-none"
+            className={`absolute rounded-lg border shadow-lg cursor-grab active:cursor-grabbing select-none group nexus-note-card ${isFocused ? 'is-focused' : ''}`}
             style={{ 
                 left: 0, 
                 top: 0,
@@ -68,52 +81,55 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick
                 userSelect: 'none',
                 WebkitUserSelect: 'none',
                 msUserSelect: 'none',
-            }}
+                '--glow-rgb': glowRgb,
+            } as React.CSSProperties}
             onDoubleClick={onDoubleClick}
             onPointerDown={(e) => onPointerDown(e, note.id)}
             onPointerUp={(e) => isLinking && onLinkEnd(e, note.id)}
         >
-            <div 
-                className="absolute -top-1 -right-1 w-4 h-4 bg-gray-500 rounded-full cursor-crosshair"
-                onPointerDown={(e) => { e.stopPropagation(); onLinkStart(e, note.id); }}
-            />
-            <h4 className="font-bold text-gray-100 truncate flex-shrink-0 pointer-events-none">{note.title}</h4>
-            <div 
-                className="text-sm text-gray-400 mt-2 flex-grow overflow-hidden pointer-events-none"
-                dangerouslySetInnerHTML={{ __html: note.content.substring(0, 200) + (note.content.length > 200 ? '...' : '') }} 
-            />
-            <div className="flex-shrink-0 mt-2">
-                <div className="flex flex-wrap gap-1">
-                    {noteTags.map(tag => (
-                        <button
-                            key={tag.id}
+            <div className="w-full h-full bg-gray-800 rounded-lg p-4 flex flex-col transition-transform duration-200 group-hover:scale-[1.02] relative">
+                <div 
+                    className="absolute -top-1 -right-1 w-4 h-4 bg-gray-500 rounded-full cursor-crosshair z-10"
+                    onPointerDown={(e) => { e.stopPropagation(); onLinkStart(e, note.id); }}
+                />
+                <h4 className="font-bold text-gray-100 truncate flex-shrink-0 pointer-events-none">{note.title}</h4>
+                <div 
+                    className="text-sm text-gray-400 mt-2 flex-grow overflow-hidden pointer-events-none"
+                    dangerouslySetInnerHTML={{ __html: note.content.substring(0, 200) + (note.content.length > 200 ? '...' : '') }} 
+                />
+                <div className="flex-shrink-0 mt-2">
+                    <div className="flex flex-wrap gap-1">
+                        {noteTags.map(tag => (
+                            <button
+                                key={tag.id}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onTagClick(tag.id);
+                                }}
+                                className="px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800"
+                                style={{ backgroundColor: tag.color, color: '#000', '--tw-ring-color': tag.color } as React.CSSProperties}
+                                title={`Filter by tag: ${tag.name}`}
+                            >
+                                {tag.name}
+                            </button>
+                        ))}
+                    </div>
+                    <p className="text-xs text-cyan-400 mt-2 truncate pointer-events-none">
+                        From: <button
+                            className="font-semibold text-cyan-300 hover:underline pointer-events-auto focus:outline-none"
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                onTagClick(tag.id);
+                                onNavigateToMapNode(note.mapId, note.mapNodeId);
                             }}
-                            className="px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800"
-                            style={{ backgroundColor: tag.color, color: '#000', '--tw-ring-color': tag.color } as React.CSSProperties}
-                            title={`Filter by tag: ${tag.name}`}
                         >
-                            {tag.name}
+                            {note.mapName}
                         </button>
-                    ))}
+                        <span className="text-gray-500 mx-1" aria-hidden="true">&gt;</span>
+                        {note.mapNodeName}
+                    </p>
                 </div>
-                <p className="text-xs text-cyan-400 mt-2 truncate pointer-events-none">
-                    From: <button
-                        className="font-semibold text-cyan-300 hover:underline pointer-events-auto focus:outline-none"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onNavigateToMapNode(note.mapId, note.mapNodeId);
-                        }}
-                    >
-                        {note.mapName}
-                    </button>
-                    <span className="text-gray-500 mx-1" aria-hidden="true">&gt;</span>
-                    {note.mapNodeName}
-                </p>
             </div>
         </div>
     );
@@ -714,6 +730,7 @@ const NexusView: React.FC<NexusViewProps> = ({
                                         isLinking={!!linkingState}
                                         onTagClick={handleNoteCardTagClick}
                                         onNavigateToMapNode={onNavigateToMapNode}
+                                        isFocused={focusNoteId === note.id}
                                     />
                                 </div>
                             )
