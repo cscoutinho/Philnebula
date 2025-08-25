@@ -5,6 +5,7 @@ import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import { AppSessionData, UserNote, AppTag } from '../../types';
 import { BrainCircuit, LinkIcon, Edit, Trash2, X, Check, Search, ChevronLeft, ChevronRight, ChevronsUpDown } from '../icons';
 import ProjectSwitcher from '../ProjectSwitcher';
+import CustomColorPicker from '../CustomColorPicker';
 
 type NexusNote = UserNote & { 
     mapNodeId: string | number; 
@@ -165,6 +166,7 @@ const SidePanel: React.FC<{
     tagCounts, maps, conceptsWithNotesByMap, selectedContextFilter, onSetContextFilter, noteCountsByMap
 }) => {
     const [editingTag, setEditingTag] = useState<AppTag | null>(null);
+    const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
 
     const handleUpdateTag = () => {
         if (!editingTag || !editingTag.name.trim()) return;
@@ -184,6 +186,13 @@ const SidePanel: React.FC<{
             newSet.add(tagId);
         }
         setSelectedTagIds(newSet);
+    };
+
+    const handleColorPickerSet = (color: string) => {
+        if (editingTag) {
+            setEditingTag({ ...editingTag, color });
+        }
+        setIsColorPickerOpen(false);
     };
 
     return (
@@ -274,7 +283,13 @@ const SidePanel: React.FC<{
                                     <li key={tag.id} className="group flex items-center justify-between text-sm">
                                         {editingTag?.id === tag.id ? (
                                             <div className="flex items-center gap-1 w-full">
-                                                <input type="color" value={editingTag.color} onChange={e => setEditingTag({...editingTag, color: e.target.value})} className="w-6 h-6 p-0.5 bg-transparent border-none rounded"/>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsColorPickerOpen(true)}
+                                                    className="w-6 h-6 rounded-md border border-gray-500 flex-shrink-0"
+                                                    style={{ backgroundColor: editingTag.color }}
+                                                    aria-label="Change tag color"
+                                                />
                                                 <input type="text" value={editingTag.name} onChange={e => setEditingTag({...editingTag, name: e.target.value})} className="flex-grow bg-gray-700 rounded px-1.5 py-0.5 text-xs"/>
                                                 <button onClick={handleUpdateTag} className="p-1 text-green-400"><Check className="w-4 h-4"/></button>
                                                 <button onClick={() => setEditingTag(null)} className="p-1 text-red-400"><X className="w-4 h-4"/></button>
@@ -301,6 +316,14 @@ const SidePanel: React.FC<{
                             </ul>
                         </div>
                     </div>
+                     {isColorPickerOpen && editingTag && (
+                        <CustomColorPicker
+                            isOpen={isColorPickerOpen}
+                            onClose={() => setIsColorPickerOpen(false)}
+                            onSetColor={handleColorPickerSet}
+                            initialColor={editingTag.color}
+                        />
+                    )}
                 </>
             )}
         </aside>

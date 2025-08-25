@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { parseMarkdown, flattenData } from './services/dataParser';
@@ -526,9 +527,19 @@ const App: React.FC = () => {
             
             const finalProjectTags = [...projectTags, ...newTagsToAdd];
             const finalUpdatedNote = { ...updatedNote, tagIds: Array.from(finalNoteTagIds) };
-    
+            
+            // --- Nexus Link Parsing ---
+            const nexusLinks: { sourceNoteId: string; targetNoteId: string; }[] = [];
+            const linkSpans = tempDiv.querySelectorAll('span.nexus-link[data-note-id]');
+            linkSpans.forEach(span => {
+                const targetId = span.getAttribute('data-note-id');
+                if (targetId) {
+                    nexusLinks.push({ sourceNoteId: updatedNote.id, targetNoteId: targetId });
+                }
+            });
+
             // Update project data with the modified note and possibly new tags
-            const newMaps = d.maps.map(m => ({
+            let newMaps = d.maps.map(m => ({
                 ...m,
                 layout: {
                     ...m.layout,
@@ -540,9 +551,34 @@ const App: React.FC = () => {
                     }))
                 }
             }));
-    
-            const projectWithUpdatedNoteAndTags = { ...d, maps: newMaps, tags: finalProjectTags };
-            return cleanupOrphanedTags(projectWithUpdatedNoteAndTags);
+            
+            // Rebuild all nexus links to ensure consistency
+            const allNexusLinks: { sourceNoteId: string; targetNoteId: string; }[] = [];
+            const parserDiv = document.createElement('div');
+            newMaps.forEach(m => {
+                m.layout.nodes.forEach(n => {
+                    (n.userNotes || []).forEach(un => {
+                        parserDiv.innerHTML = un.content;
+                        parserDiv.querySelectorAll('span.nexus-link[data-note-id]').forEach(span => {
+                            const targetId = span.getAttribute('data-note-id');
+                            if (targetId) {
+                                allNexusLinks.push({ sourceNoteId: un.id, targetNoteId: targetId });
+                            }
+                        });
+                    });
+                });
+            });
+
+            const projectWithUpdates = { 
+                ...d, 
+                maps: newMaps, 
+                tags: finalProjectTags,
+                nexusLayout: {
+                    ...d.nexusLayout,
+                    links: allNexusLinks,
+                }
+            };
+            return cleanupOrphanedTags(projectWithUpdates);
         });
     }, [updateActiveProjectData]);
 
@@ -1152,6 +1188,7 @@ const App: React.FC = () => {
                     onUpdateUserNote={() => {}}
                     onUpdateTags={() => {}}
                     onNavigateToNexusTag={() => {}}
+                    onNavigateToNexusNote={() => {}}
                 />
             )}
 
@@ -1178,6 +1215,7 @@ const App: React.FC = () => {
                         allProjectTags={activeProjectData.tags || []}
                         onUpdateTags={handleUpdateTags}
                         onNavigateToNexusTag={handleNavigateToNexusTag}
+                        onNavigateToNexusNote={handleNavigateToNexusNote}
                     />
                 );
             })()}
@@ -1201,6 +1239,7 @@ const App: React.FC = () => {
                     allProjectTags={activeProjectData.tags || []}
                     onUpdateTags={handleUpdateTags}
                     onNavigateToNexusTag={handleNavigateToNexusTag}
+                    onNavigateToNexusNote={handleNavigateToNexusNote}
                 />
             )}
 

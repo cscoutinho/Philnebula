@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { GoogleGenAI, Type, Chat } from '@google/genai';
-import type { ProjectActivityType, KindleNote, UserNote, AppTag } from '../../../types';
-import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon } from '../../icons';
+import type { ProjectActivityType, KindleNote, UserNote, AppTag } from '../../types';
+import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon } from '../icons';
 
 const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boolean) => void, () => void, () => void, boolean, boolean] => {
     const [history, setHistory] = useState<T[]>([initialState]);
@@ -752,10 +752,44 @@ const EditableNoteCard: React.FC<{
     const audioChunksRef = useRef<Blob[]>([]);
 
     const [linkSearch, setLinkSearch] = useState<{ query: string; range: Range; position: { top: number, left: number } } | null>(null);
+    
     const linkResults = useMemo(() => {
-        if (!linkSearch) return [];
-        const lowerQuery = linkSearch.query.toLowerCase();
-        return allProjectNotes.filter(n => n.id !== note.id && n.title.toLowerCase().includes(lowerQuery)).slice(0, 5);
+        if (!linkSearch || !linkSearch.query.trim()) return [];
+
+        const query = linkSearch.query.trim().toLowerCase();
+
+        const getScore = (title: string): number => {
+            const lowerTitle = title.toLowerCase();
+
+            if (lowerTitle === query) return 10; // Exact match
+            if (lowerTitle.startsWith(query)) return 5; // Starts with
+
+            // To create a word boundary regex, we need to escape special characters.
+            const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            if (new RegExp(`\\b${escapedQuery}\\b`).test(lowerTitle)) return 3; // Whole word
+            
+            if (lowerTitle.includes(query)) return 1; // Substring
+
+            return 0;
+        };
+
+        return allProjectNotes
+            .filter(n => n.id !== note.id)
+            .map(n => ({ note: n, score: getScore(n.title) }))
+            .filter(item => item.score > 0)
+            .sort((a, b) => {
+                if (a.score !== b.score) {
+                    return b.score - a.score; // Higher score first
+                }
+                // Tie-breaker 1: shorter title is better
+                if (a.note.title.length !== b.note.title.length) {
+                    return a.note.title.length - b.note.title.length;
+                }
+                // Tie-breaker 2: alphabetical
+                return a.note.title.localeCompare(b.note.title);
+            })
+            .slice(0, 5)
+            .map(item => item.note);
     }, [linkSearch, allProjectNotes, note.id]);
 
 
