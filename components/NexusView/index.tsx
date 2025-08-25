@@ -79,6 +79,7 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick
                     {noteTags.map(tag => (
                         <button
                             key={tag.id}
+                            onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onTagClick(tag.id);
@@ -113,7 +114,8 @@ const SidePanel: React.FC<{
     onDeleteProject: (projectId: string) => void;
     onRenameProject: (projectId: string, newName: string) => void;
     onRequestConfirmation: any;
-}> = ({ tags, onUpdateTags, searchQuery, setSearchQuery, selectedTagIds, setSelectedTagIds, isCollapsed, onToggleCollapse, session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation }) => {
+    tagCounts: Map<string, number>;
+}> = ({ tags, onUpdateTags, searchQuery, setSearchQuery, selectedTagIds, setSelectedTagIds, isCollapsed, onToggleCollapse, session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation, tagCounts }) => {
     const [editingTag, setEditingTag] = useState<AppTag | null>(null);
     const [newTagName, setNewTagName] = useState('');
     const [newTagColor, setNewTagColor] = useState('#6366f1');
@@ -206,11 +208,16 @@ const SidePanel: React.FC<{
                                         <>
                                             <button onClick={() => toggleTagFilter(tag.id)} className={`flex items-center gap-2 flex-grow text-left p-1 rounded ${selectedTagIds.has(tag.id) ? 'bg-cyan-800/80' : ''}`}>
                                                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
-                                                <span>{tag.name}</span>
+                                                <span className="truncate">{tag.name}</span>
                                             </button>
-                                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => setEditingTag(tag)} className="p-1 text-gray-400 hover:text-cyan-400"><Edit className="w-4 h-4"/></button>
-                                                <button onClick={() => handleDeleteTag(tag.id)} className="p-1 text-gray-400 hover:text-red-400"><Trash2 className="w-4 h-4"/></button>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-mono bg-gray-700 text-gray-300 rounded-full w-6 h-6 flex items-center justify-center">
+                                                    {tagCounts.get(tag.id) || 0}
+                                                </span>
+                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => setEditingTag(tag)} className="p-1 text-gray-400 hover:text-cyan-400"><Edit className="w-4 h-4"/></button>
+                                                    <button onClick={() => handleDeleteTag(tag.id)} className="p-1 text-gray-400 hover:text-red-400"><Trash2 className="w-4 h-4"/></button>
+                                                </div>
                                             </div>
                                         </>
                                     )}
@@ -301,6 +308,17 @@ const NexusView: React.FC<NexusViewProps> = ({
             return searchMatch && tagMatch;
         });
     }, [allUserNotes, searchQuery, selectedTagIds]);
+
+    const tagCounts = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const note of filteredNotes) {
+            for (const tagId of note.tagIds || []) {
+                counts.set(tagId, (counts.get(tagId) || 0) + 1);
+            }
+        }
+        return counts;
+    }, [filteredNotes]);
+
 
     // Setup zoom behavior
     useEffect(() => {
@@ -466,7 +484,12 @@ const NexusView: React.FC<NexusViewProps> = ({
     };
 
     const handleNoteCardTagClick = (tagId: string) => {
-        setSelectedTagIds(new Set([tagId]));
+        setSelectedTagIds(prev => {
+            if (prev.size === 1 && prev.has(tagId)) {
+                return new Set<string>();
+            }
+            return new Set([tagId]);
+        });
     };
 
     return (
@@ -487,6 +510,7 @@ const NexusView: React.FC<NexusViewProps> = ({
                 onDeleteProject={onDeleteProject}
                 onRenameProject={onRenameProject}
                 onRequestConfirmation={onRequestConfirmation}
+                tagCounts={tagCounts}
             />
             
             <main ref={canvasRef} className="flex-grow h-full relative overflow-hidden">
