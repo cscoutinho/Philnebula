@@ -909,15 +909,20 @@ const EditableNoteCard: React.FC<{
                     tempRange.setStart(textNode, match.index!);
                     tempRange.setEnd(textNode, range.startOffset);
                     
-                    if (editorRef.current) {
-                        const editorRect = editorRef.current.getBoundingClientRect();
-                        const rangeRect = tempRange.getBoundingClientRect();
-                        const position = {
-                            top: rangeRect.bottom - editorRect.top,
-                            left: rangeRect.left - editorRect.left,
-                        };
-                        setLinkSearch({ query, range: tempRange, position });
-                    }
+                    // Use fixed positioning relative to viewport instead of relative to editor
+                    const rangeRect = tempRange.getBoundingClientRect();
+                    const position = {
+                        top: rangeRect.bottom + 5,
+                        left: rangeRect.left,
+                    };
+                    
+                    // Ensure dropdown is visible within viewport bounds
+                    const adjustedPosition = {
+                        top: Math.max(5, Math.min(position.top, window.innerHeight - 200)),
+                        left: Math.max(5, Math.min(position.left, window.innerWidth - 260)),
+                    };
+                    
+                    setLinkSearch({ query, range: tempRange, position: adjustedPosition });
                     return;
                 }
             }
@@ -1046,10 +1051,11 @@ const EditableNoteCard: React.FC<{
             </div>
              {linkSearch && (
                 <div 
-                    className="absolute bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50 text-white text-sm w-64"
+                    className="fixed bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 text-white text-sm w-64"
                     style={{
-                        top: linkSearch.position.top + 5,
+                        top: linkSearch.position.top,
                         left: linkSearch.position.left,
+                        zIndex: 9999
                     }}
                 >
                     <input type="text" readOnly value={`[[${linkSearch.query}`} className="w-full bg-gray-900 text-gray-400 px-2 py-1 rounded-t-md text-xs outline-none" />
