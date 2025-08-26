@@ -1001,14 +1001,35 @@ const EditableNoteCard: React.FC<{
         
         const selection = window.getSelection();
         if (!selection) return;
-    
+
+        // Store the current cursor position before removing ranges
+        const currentRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+        
+        // Delete the [[ pattern and any partial query text
+        range.deleteContents();
+        
+        // Create the link element
+        const displayText = targetNote.title;
+        const linkSpan = document.createElement('span');
+        linkSpan.className = 'nexus-link';
+        linkSpan.setAttribute('data-note-id', targetNote.id.toString());
+        linkSpan.setAttribute('contenteditable', 'false');
+        linkSpan.textContent = displayText;
+        
+        // Insert the link at the exact range position
+        range.insertNode(linkSpan);
+        
+        // Add a space after the link for better UX
+        const spaceNode = document.createTextNode('\u00A0');
+        range.setStartAfter(linkSpan);
+        range.insertNode(spaceNode);
+        
+        // Position cursor after the space
+        range.setStartAfter(spaceNode);
+        range.collapse(true);
+        
         selection.removeAllRanges();
         selection.addRange(range);
-    
-        const displayText = targetNote.title;
-        const linkElHtml = `<span class="nexus-link" data-note-id="${targetNote.id}" contenteditable="false">${escapeHtml(displayText)}</span>&nbsp;`;
-        
-        document.execCommand('insertHTML', false, linkElHtml);
     
         setLinkSearch(null);
         setContent(editor.innerHTML, true);
