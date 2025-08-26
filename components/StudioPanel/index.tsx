@@ -993,7 +993,7 @@ const EditableNoteCard: React.FC<{
         if (!linkSearch || !editorRef.current) return;
         
         const editor = editorRef.current;
-        editor.focus();
+        editor.focus({ preventScroll: true });
 
         const { range, alias } = linkSearch;
         
