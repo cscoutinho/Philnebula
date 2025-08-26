@@ -190,6 +190,31 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     
     const isNoteTakingMode = !analysisMode;
 
+    const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const startSize = size;
+        const startPosition = { x: e.clientX, y: e.clientY };
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+            const dx = moveEvent.clientX - startPosition.x;
+            const dy = moveEvent.clientY - startPosition.y;
+            setSize({
+                width: Math.max(500, startSize.width + dx),
+                height: Math.max(400, startSize.height + dy),
+            });
+        };
+
+        const onPointerUp = () => {
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp, { once: true });
+    }, [size]);
+
     // Effect to update panel position
     useEffect(() => {
         if (panelRef.current) {
@@ -640,15 +665,7 @@ Text: "${analysisText}"`;
         <div
             ref={panelRef}
             style={{ top: position.y, left: position.x, width: size.width, height: size.height, minWidth: 500, minHeight: 400 }}
-            className="fixed bg-gray-900 border border-gray-700 rounded-lg shadow-2xl z-50 text-white flex flex-col resize overflow-hidden select-text"
-            onMouseUp={() => {
-                if (panelRef.current) {
-                    const rect = panelRef.current.getBoundingClientRect();
-                    if(rect.width !== size.width || rect.height !== size.height) {
-                        setSize({ width: rect.width, height: rect.height });
-                    }
-                }
-            }}
+            className="fixed bg-gray-900 border border-gray-700 rounded-lg shadow-2xl z-50 text-white flex flex-col overflow-hidden select-text"
         >
             <div ref={headerRef} className="flex justify-between items-center p-2 border-b border-gray-700 bg-gray-800 rounded-t-lg cursor-grab active:cursor-grabbing flex-shrink-0">
                 <h3 className="text-md font-bold text-cyan-300 flex items-center gap-2 pl-2"><NoteIcon className="w-5 h-5"/> Studio: {nodeName}</h3>
@@ -722,7 +739,23 @@ Text: "${analysisText}"`;
                 </div>
             </div>
             
-            {/* AI Interaction elements remain the same */}
+            <div
+                onPointerDown={handleResizePointerDown}
+                className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-10"
+                title="Resize panel"
+            >
+                <svg
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="w-3 h-3 text-gray-500 absolute bottom-1 right-1"
+                    aria-hidden="true"
+                >
+                    <path d="M11 1 L1 11" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M11 5 L5 11" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M11 9 L9 11" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+            </div>
         </div>
     );
 };
