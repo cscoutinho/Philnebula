@@ -751,8 +751,11 @@ const EditableNoteCard: React.FC<{
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     
-    type LinkSearchState = { query: string; alias?: string; range: Range; position: { top: number, left: number } };
+    type LinkSearchState = { query: string; range: Range; position: { top: number, left: number } };
     const [linkSearch, setLinkSearch] = useState<LinkSearchState | null>(null);
+    
+    const [linkEditState, setLinkEditState] = useState<{ target: HTMLSpanElement, rect: DOMRect } | null>(null);
+    const [aliasText, setAliasText] = useState('');
 
     const linkResults = useMemo(() => {
         if (!linkSearch || !linkSearch.query.trim()) return [];
@@ -951,10 +954,9 @@ const EditableNoteCard: React.FC<{
             const textNode = range.startContainer;
             if (textNode.nodeType === Node.TEXT_NODE && textNode.textContent) {
                 const textContent = textNode.textContent;
-                const match = textContent.substring(0, range.startOffset).match(/\[\[([^\]]*)$/);
+                const match = textContent.substring(0, range.startOffset).match(/\[\[([^\][]*)$/);
                 if (match) {
-                    const fullQuery = match[1];
-                    const [query, alias] = fullQuery.split('|');
+                    const query = match[1];
                     const tempRange = document.createRange();
                     tempRange.setStart(textNode, match.index!);
                     tempRange.setEnd(textNode, range.startOffset);
@@ -971,7 +973,7 @@ const EditableNoteCard: React.FC<{
                             left: rangeRect.left - cardRootRect.left,
                         };
                         
-                        setLinkSearch({ query, alias, range: tempRange, position });
+                        setLinkSearch({ query, range: tempRange, position });
                     }
                     return;
                 }
@@ -994,30 +996,44 @@ const EditableNoteCard: React.FC<{
         
         const editor = editorRef.current;
         editor.focus({ preventScroll: true });
-
-        const { range, alias } = linkSearch;
+    
+        const { range } = linkSearch;
         
         const selection = window.getSelection();
         if (!selection) return;
-
+    
         selection.removeAllRanges();
         selection.addRange(range);
-
-        const displayText = (alias !== undefined && alias.trim() !== '') ? alias.trim() : targetNote.title;
-        const aliasAttr = (alias !== undefined && alias.trim() !== '') ? `data-alias="true"` : '';
-        const linkElHtml = `<span class="nexus-link" data-note-id="${targetNote.id}" ${aliasAttr} contenteditable="false">${escapeHtml(displayText)}</span>&nbsp;`;
+    
+        const displayText = targetNote.title;
+        const linkElHtml = `<span class="nexus-link" data-note-id="${targetNote.id}" contenteditable="false">${escapeHtml(displayText)}</span>&nbsp;`;
         
         document.execCommand('insertHTML', false, linkElHtml);
-
+    
         setLinkSearch(null);
         setContent(editor.innerHTML, true);
     };
     
+    // Alias editing logic
     useEffect(() => {
         const editor = editorRef.current;
         if (!editor) return;
 
+        const handleContextMenu = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('nexus-link')) {
+                e.preventDefault();
+                setAliasText(target.textContent || '');
+                setLinkEditState({ target, rect: target.getBoundingClientRect() });
+            }
+        };
+
         const handleClick = (e: MouseEvent) => {
+            // Close context menu if clicking outside of it
+            if (linkEditState && !(e.target as HTMLElement).closest('.link-edit-popover')) {
+                setLinkEditState(null);
+            }
+
             const target = e.target as HTMLElement;
             if (target.classList.contains('nexus-link')) {
                 e.preventDefault();
@@ -1028,9 +1044,53 @@ const EditableNoteCard: React.FC<{
             }
         };
 
-        editor.addEventListener('click', handleClick);
-        return () => editor.removeEventListener('click', handleClick);
-    }, [onNavigateToNexusNote]);
+        editor.addEventListener('contextmenu', handleContextMenu);
+        document.addEventListener('click', handleClick);
+        return () => {
+            if (editor) {
+                editor.removeEventListener('contextmenu', handleContextMenu);
+            }
+            document.removeEventListener('click', handleClick);
+        };
+    }, [onNavigateToNexusNote, linkEditState]);
+
+    const handleUpdateAlias = () => {
+        if (!linkEditState || !editorRef.current) return;
+    
+        const { target: span } = linkEditState;
+        const noteId = span.getAttribute('data-note-id');
+        const targetNote = allProjectNotes.find(n => n.id === noteId);
+    
+        if (!targetNote) {
+            setLinkEditState(null);
+            return;
+        }
+        
+        const newText = aliasText.trim();
+        const displayText = newText || targetNote.title;
+    
+        span.innerHTML = escapeHtml(displayText);
+        
+        if (displayText !== targetNote.title) {
+            span.setAttribute('data-alias', 'true');
+        } else {
+            span.removeAttribute('data-alias');
+        }
+    
+        setContent(editorRef.current.innerHTML, true);
+        setLinkEditState(null);
+    };
+    
+    const handleRemoveLink = () => {
+        if (!linkEditState || !editorRef.current) return;
+        const { target: span } = linkEditState;
+        
+        span.replaceWith(document.createTextNode(span.textContent || ''));
+    
+        editorRef.current.normalize();
+        setContent(editorRef.current.innerHTML, true);
+        setLinkEditState(null);
+    };
     
     const escapeRegExp = (string: string) => {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1111,7 +1171,7 @@ const EditableNoteCard: React.FC<{
                         left: linkSearch.position.left,
                     }}
                 >
-                    <input type="text" readOnly value={`[[${linkSearch.query}${linkSearch.alias !== undefined ? '|' + linkSearch.alias : ''}`} className="w-full bg-gray-900 text-gray-400 px-2 py-1 rounded-t-md text-xs outline-none" />
+                    <input type="text" readOnly value={`[[${linkSearch.query}`} className="w-full bg-gray-900 text-gray-400 px-2 py-1 rounded-t-md text-xs outline-none" />
                     <ul className="max-h-48 overflow-y-auto">
                         {linkResults.map(res => (
                             <li key={res.id}>
@@ -1123,6 +1183,37 @@ const EditableNoteCard: React.FC<{
                         ))}
                         {linkResults.length === 0 && <li className="px-3 py-1.5 text-gray-500 text-xs italic">No matching notes found</li>}
                     </ul>
+                </div>
+            )}
+            {linkEditState && (
+                <div 
+                    style={{ 
+                        position: 'fixed', 
+                        top: linkEditState.rect.bottom + 5, 
+                        left: linkEditState.rect.left 
+                    }}
+                    className="bg-gray-800 border border-gray-600 rounded-md shadow-lg p-2 z-50 w-64 space-y-2 animate-fade-in link-edit-popover"
+                    onMouseDown={e => e.stopPropagation()}
+                >
+                    <p className="text-xs font-bold text-gray-400 px-1">Edit Link</p>
+                    <div>
+                        <label className="text-xs text-gray-300 px-1">Display Text</label>
+                        <input 
+                            type="text" 
+                            value={aliasText}
+                            onChange={e => setAliasText(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateAlias(); if (e.key === 'Escape') setLinkEditState(null); }}
+                            autoFocus
+                            className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        />
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <button onClick={handleRemoveLink} className="p-1 text-gray-400 hover:text-red-400" title="Remove Link"><Trash2 className="w-4 h-4" /></button>
+                        <div className="flex gap-2">
+                            <button onClick={() => setLinkEditState(null)} className="px-2 py-1 text-xs bg-gray-600 rounded">Cancel</button>
+                            <button onClick={handleUpdateAlias} className="px-2 py-1 text-xs bg-cyan-600 text-white rounded">Save</button>
+                        </div>
+                    </div>
                 </div>
             )}
             <div className="flex-shrink-0 p-2 border-t border-gray-700 bg-gray-900/70">
