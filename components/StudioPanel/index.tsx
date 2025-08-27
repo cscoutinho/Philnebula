@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { GoogleGenAI, Type, Chat } from '@google/genai';
 import type { ProjectActivityType, KindleNote, UserNote, AppTag } from '../../types';
-import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon } from '../icons';
+import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon, QuoteIcon } from '../icons';
 
 const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boolean) => void, () => void, () => void, boolean, boolean] => {
     const [history, setHistory] = useState<T[]>([initialState]);
@@ -1167,6 +1167,7 @@ const EditableNoteCard: React.FC<{
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('bold')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Bold"><BoldIcon className="w-4 h-4"/></button>
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('italic')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Italic"><ItalicIcon className="w-4 h-4"/></button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('formatBlock', 'blockquote')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Blockquote"><QuoteIcon className="w-4 h-4"/></button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
                 <div className="relative">
                     <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setIsColorPickerOpen(p => !p); setIsFontSizePickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Text Color"><PaletteIcon className="w-4 h-4"/></button>
