@@ -6,12 +6,17 @@ import { BrainCircuit, LinkIcon, Edit, Trash2, X, Check, Search, ChevronLeft, Ch
 import ProjectSwitcher from '../ProjectSwitcher';
 import CustomColorPicker from '../CustomColorPicker';
 
-type NexusNote = UserNote & { 
-    mapNodeId: string | number; 
-    mapNodeName: string; 
+type NexusNoteContext = {
     mapId: string;
     mapName: string;
+    mapNodeId: string | number;
+    mapNodeName: string;
 };
+
+type NexusNote = UserNote & { 
+    contexts: NexusNoteContext[];
+};
+
 type NotePosition = { userNoteId: string; x: number; y: number; width: number; height: number; };
 
 interface NexusViewProps {
@@ -66,6 +71,8 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick
     const glowColor = firstTagColor || '#06b6d4'; // Default to cyan-500
     const glowRgb = hexToRgb(glowColor);
 
+    const firstContext = note.contexts[0];
+    if (!firstContext) return null;
 
     return (
         <div
@@ -121,13 +128,17 @@ const NoteCard: React.FC<NoteCardProps> = ({ note, position, tags, onDoubleClick
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                onNavigateToMapNode(note.mapId, note.mapNodeId);
+                                onNavigateToMapNode(firstContext.mapId, firstContext.mapNodeId);
                             }}
+                            title={note.contexts.length > 1 ? `Also in: ${note.contexts.slice(1).map(c => c.mapName).join(', ')}` : ''}
                         >
-                            {note.mapName}
+                            {firstContext.mapName}
                         </button>
                         <span className="text-gray-500 mx-1" aria-hidden="true">&gt;</span>
-                        {note.mapNodeName}
+                        {firstContext.mapNodeName}
+                        {note.contexts.length > 1 && (
+                            <span className="text-xs text-gray-500 ml-2">(+{note.contexts.length - 1} more)</span>
+                        )}
                     </p>
                 </div>
             </div>
@@ -331,29 +342,11 @@ const SidePanel: React.FC<{
 
 
 const NexusView: React.FC<NexusViewProps> = ({ 
-    allUserNotes: rawAllUserNotes, activeProjectData, updateActiveProjectData, onOpenStudioForNexusNote, 
+    allUserNotes, activeProjectData, updateActiveProjectData, onOpenStudioForNexusNote, 
     focusNoteId, onClearFocusNote, focusTagId, onClearFocusTag, onUpdateNexusLayout, onUpdateTags,
     session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation,
     onNavigateToMapNode
 }) => {
-    // Deduplicate notes by ID to prevent double counting in tags
-    const allUserNotes = useMemo(() => {
-        const seenIds = new Set<string>();
-        const uniqueNotes = [];
-        for (const note of rawAllUserNotes) {
-            if (!seenIds.has(note.id)) {
-                seenIds.add(note.id);
-                uniqueNotes.push(note);
-            }
-        }
-        if (uniqueNotes.length !== rawAllUserNotes.length) {
-            console.warn('NexusView: Removed duplicate notes', {
-                original: rawAllUserNotes.length,
-                deduplicated: uniqueNotes.length
-            });
-        }
-        return uniqueNotes;
-    }, [rawAllUserNotes]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
     const [selectedContextFilter, setSelectedContextFilter] = useState<ContextFilter>(null);
@@ -406,7 +399,7 @@ const NexusView: React.FC<NexusViewProps> = ({
                 notePositions: [...(layout?.notePositions || []), ...updatedPositions]
             }));
         }
-    }, [allUserNotes.length, activeProjectData.nexusLayout?.notePositions?.length, onUpdateNexusLayout]);
+    }, [allUserNotes, activeProjectData.nexusLayout?.notePositions, onUpdateNexusLayout]);
     
 
     const filteredNotes = useMemo(() => {
@@ -419,8 +412,8 @@ const NexusView: React.FC<NexusViewProps> = ({
                 (note.tagIds || []).some(tagId => selectedTagIds.has(tagId));
 
             const contextMatch = !selectedContextFilter ||
-                (selectedContextFilter.type === 'map' && note.mapId === selectedContextFilter.id) ||
-                (selectedContextFilter.type === 'concept' && note.mapNodeId === selectedContextFilter.id);
+                (selectedContextFilter.type === 'map' && note.contexts.some(c => c.mapId === selectedContextFilter.id)) ||
+                (selectedContextFilter.type === 'concept' && note.contexts.some(c => c.mapNodeId === selectedContextFilter.id));
                 
             return searchMatch && tagMatch && contextMatch;
         });
@@ -430,39 +423,43 @@ const NexusView: React.FC<NexusViewProps> = ({
 
     const conceptsWithNotesByMap = useMemo(() => {
         const result = new Map<string, { mapName: string, concepts: { id: string | number, name: string, noteCount: number }[] }>();
-        const conceptNoteCounts = new Map<string | number, number>();
-
+        
         for (const note of allUserNotes) {
-            conceptNoteCounts.set(note.mapNodeId, (conceptNoteCounts.get(note.mapNodeId) || 0) + 1);
-
-            if (!result.has(note.mapId)) {
-                result.set(note.mapId, { mapName: note.mapName, concepts: [] });
+            for (const context of note.contexts) {
+                if (!result.has(context.mapId)) {
+                    result.set(context.mapId, { mapName: context.mapName, concepts: [] });
+                }
             }
         }
-        
-        const conceptsAdded = new Set<string | number>();
+    
+        const conceptsAdded = new Set<string>();
         for (const note of allUserNotes) {
-            if (!conceptsAdded.has(note.mapNodeId)) {
-                const mapData = result.get(note.mapId);
+            for (const context of note.contexts) {
+                const mapData = result.get(context.mapId);
                 if (mapData) {
-                    mapData.concepts.push({ id: note.mapNodeId, name: note.mapNodeName, noteCount: conceptNoteCounts.get(note.mapNodeId) || 0 });
-                    conceptsAdded.add(note.mapNodeId);
+                    const conceptKey = `${context.mapId}-${context.mapNodeId}`;
+                    if (!conceptsAdded.has(conceptKey)) {
+                        const noteCount = allUserNotes.filter(n => n.contexts.some(c => c.mapId === context.mapId && c.mapNodeId === context.mapNodeId)).length;
+                        mapData.concepts.push({ id: context.mapNodeId, name: context.mapNodeName, noteCount });
+                        conceptsAdded.add(conceptKey);
+                    }
                 }
             }
         }
         
-        // Sort concepts within each map
         result.forEach(mapData => {
             mapData.concepts.sort((a, b) => a.name.localeCompare(b.name));
         });
-
+    
         return result;
     }, [allUserNotes]);
-
+    
     const noteCountsByMap = useMemo(() => {
         const counts = new Map<string, number>();
         for (const note of allUserNotes) {
-            counts.set(note.mapId, (counts.get(note.mapId) || 0) + 1);
+            for (const context of note.contexts) {
+                counts.set(context.mapId, (counts.get(context.mapId) || 0) + 1);
+            }
         }
         return counts;
     }, [allUserNotes]);

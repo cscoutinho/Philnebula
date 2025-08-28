@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { parseMarkdown, flattenData } from './services/dataParser';
@@ -16,7 +17,8 @@ import MapSwitcher from './components/MapSwitcher';
 import ProjectDiaryPanel from './components/ProjectDiaryPanel';
 import BeliefFlipChallenge from './components/BeliefFlipChallenge';
 import ConfirmDialog from './components/ConfirmDialog';
-import { BrainCircuit, SettingsIcon, DiaryIcon, FlaskConicalIcon, LightbulbIcon, BookOpenIcon, X, RefreshCw, GraduationCapIcon, ChevronDown } from './components/icons';
+import ConceptualBridge from './components/ConceptualBridge';
+import { BrainCircuit, SettingsIcon, DiaryIcon, FlaskConicalIcon, LightbulbIcon, BookOpenIcon, X, RefreshCw, GraduationCapIcon, ChevronDown, BridgeIcon } from './components/icons';
 import { useSessionManager } from './hooks/useSessionManager';
 import { useFeedManager } from './hooks/useFeedManager';
 import { useNebula } from './hooks/useNebula';
@@ -193,6 +195,7 @@ const App: React.FC = () => {
     const [isDiaryOpen, setIsDiaryOpen] = useState(false);
     const [isNotesInboxOpen, setIsNotesInboxOpen] = useState(false);
     const [isChallengeOpen, setIsChallengeOpen] = useState(false);
+    const [isConceptualBridgeOpen, setIsConceptualBridgeOpen] = useState(false);
     const [initialWorkbenchData, setInitialWorkbenchData] = useState<any>(null);
     const [notesToPlace, setNotesToPlace] = useState<KindleNote[] | null>(null);
     const [nexusFocusNoteId, setNexusFocusNoteId] = useState<string | null>(null);
@@ -259,24 +262,48 @@ const App: React.FC = () => {
 
     const allUserNotesWithNodeInfo = useMemo(() => {
         if (!activeProjectData) return [];
-        const notes: (UserNote & { mapNodeId: string | number, mapNodeName: string, mapId: string, mapName: string })[] = [];
-        const seenNoteIds = new Set<string>();
-        
+    
+        const notesMap = new Map<string, { note: UserNote; contexts: { mapId: string; mapName: string; mapNodeId: string | number; mapNodeName: string }[] }>();
+    
         activeProjectData.maps.forEach(map => {
             map.layout.nodes.forEach(node => {
                 if (node.userNotes) {
                     node.userNotes.forEach(un => {
-                        // Only add if we haven't seen this note ID before
-                        if (!seenNoteIds.has(un.id)) {
-                            seenNoteIds.add(un.id);
-                            notes.push({ ...un, mapNodeId: node.id, mapNodeName: node.name, mapId: map.id, mapName: map.name });
+                        if (!notesMap.has(un.id)) {
+                            notesMap.set(un.id, { note: un, contexts: [] });
                         }
+                        notesMap.get(un.id)!.contexts.push({
+                            mapId: map.id,
+                            mapName: map.name,
+                            mapNodeId: node.id,
+                            mapNodeName: node.name,
+                        });
                     });
                 }
             });
         });
-        return notes;
+    
+        const notesWithContexts: (UserNote & { contexts: { mapId: string; mapName: string; mapNodeId: string | number; mapNodeName: string }[] })[] = [];
+        for (const { note, contexts } of notesMap.values()) {
+            notesWithContexts.push({
+                ...note,
+                contexts: contexts,
+            });
+        }
+    
+        return notesWithContexts;
     }, [activeProjectData]);
+
+    // FIX: Correctly flatten the allUserNotesWithNodeInfo by ensuring context properties exist and removing the nested 'contexts' array to match the expected type for StudioPanel's `allProjectNotes` prop.
+    const flattenedAllUserNotes = useMemo(() => {
+        return allUserNotesWithNodeInfo
+            .filter(note => note.contexts && note.contexts.length > 0)
+            .map(note => {
+                const { contexts, ...restOfNote } = note;
+                const firstContext = contexts[0];
+                return { ...restOfNote, ...firstContext };
+            });
+    }, [allUserNotesWithNodeInfo]);
 
     const allRelationshipTypes = useMemo(() => {
         const disabledDefaults = new Set(session.disabledDefaultTypes || []);
@@ -1077,9 +1104,11 @@ const App: React.FC = () => {
         }
     };
     
-    const studioUserNote = useMemo(() => {
+    const studioUserNoteWithContext = useMemo(() => {
         if (studioState?.mode !== 'nexus' || !studioState.userNoteId) return null;
-        return allUserNotesWithNodeInfo.find(un => un.id === studioState.userNoteId) || null;
+        const note = allUserNotesWithNodeInfo.find(un => un.id === studioState.userNoteId);
+        if (!note || note.contexts.length === 0) return null;
+        return { ...note, ...note.contexts[0] };
     }, [studioState, allUserNotesWithNodeInfo]);
 
 
@@ -1156,9 +1185,14 @@ const App: React.FC = () => {
                 </div>
                  <div className="flex items-center gap-2 pointer-events-auto">
                     {currentView === 'map' && (
-                         <button onClick={() => setIsNotesInboxOpen(true)} className="p-2.5 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-cyan-500" aria-label="Open Notes Inbox">
-                            <BookOpenIcon className="w-5 h-5" />
-                        </button>
+                        <>
+                            <button onClick={() => setIsConceptualBridgeOpen(true)} className="p-2.5 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-green-500" aria-label="Open Conceptual Bridge">
+                                <BridgeIcon className="w-5 h-5" />
+                            </button>
+                             <button onClick={() => setIsNotesInboxOpen(true)} className="p-2.5 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-cyan-500" aria-label="Open Notes Inbox">
+                                <BookOpenIcon className="w-5 h-5" />
+                            </button>
+                        </>
                     )}
                      <button onClick={() => setIsChallengeOpen(true)} className="p-2.5 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-yellow-500" aria-label="Open Belief Flip Challenge">
                         <LightbulbIcon className="w-5 h-5" />
@@ -1243,7 +1277,7 @@ const App: React.FC = () => {
                         })}
                         logActivity={logActivity}
                         ai={ai}
-                        allProjectNotes={allUserNotesWithNodeInfo}
+                        allProjectNotes={flattenedAllUserNotes}
                         allProjectTags={activeProjectData.tags || []}
                         onUpdateTags={handleUpdateTags}
                         onNavigateToNexusTag={handleNavigateToNexusTag}
@@ -1252,22 +1286,22 @@ const App: React.FC = () => {
                 );
             })()}
 
-            {studioState && studioState.mode === 'nexus' && studioUserNote && (
+            {studioState && studioState.mode === 'nexus' && studioUserNoteWithContext && (
                 <StudioPanel
-                    state={{ nodeId: studioUserNote.mapNodeId, x: studioState.x, y: studioState.y }}
-                    activeUserNote={studioUserNote}
-                    userNotes={[studioUserNote]}
-                    nodeName={studioUserNote.mapNodeName}
+                    state={{ nodeId: studioUserNoteWithContext.mapNodeId, x: studioState.x, y: studioState.y }}
+                    activeUserNote={studioUserNoteWithContext}
+                    userNotes={[studioUserNoteWithContext]}
+                    nodeName={studioUserNoteWithContext.mapNodeName}
                     onClose={() => setStudioState(null)}
                     onUpdateUserNote={handleUpdateUserNote}
                     onLogEdit={(nodeId, noteTitle) => logActivity('EDIT_NOTE', {
                         conceptId: nodeId,
-                        conceptName: studioUserNote.mapNodeName,
+                        conceptName: studioUserNoteWithContext.mapNodeName,
                         noteTitle: noteTitle
                     })}
                     logActivity={logActivity}
                     ai={ai}
-                    allProjectNotes={allUserNotesWithNodeInfo}
+                    allProjectNotes={flattenedAllUserNotes}
                     allProjectTags={activeProjectData.tags || []}
                     onUpdateTags={handleUpdateTags}
                     onNavigateToNexusTag={handleNavigateToNexusTag}
@@ -1319,6 +1353,14 @@ const App: React.FC = () => {
                 data={researchAnalysisData}
                 nodeName={currentAnalysisNodeName}
                 publicationTitleToUrlMap={publicationTitleToUrlMap}
+            />
+
+            <ConceptualBridge
+                isOpen={isConceptualBridgeOpen}
+                onClose={() => setIsConceptualBridgeOpen(false)}
+                ai={ai}
+                allPhilPapersNodes={data?.nodes || []}
+                logActivity={logActivity}
             />
         </div>
     );

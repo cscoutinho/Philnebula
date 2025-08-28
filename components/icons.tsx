@@ -1,4 +1,16 @@
+
 import React from 'react';
+
+export const BridgeIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M5 9V5"/>
+        <path d="M19 9V5"/>
+        <path d="M5 9H3v10h2"/>
+        <path d="M19 9h2v10h-2"/>
+        <path d="M3 19h18"/>
+        <path d="M9 14a11.16 11.16 0 0 1 6 0"/>
+    </svg>
+);
 
 export const BrainCircuit: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>

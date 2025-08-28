@@ -2,7 +2,8 @@
   "name": "PhilPapers Interactive Nebula (2508)",
   "description": "An interactive force-directed graph visualization of the PhilPapers taxonomy, allowing users to explore philosophical categories, find AI-discovered connections, and build their own conceptual maps.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ],
   "prompt": ""
 }
