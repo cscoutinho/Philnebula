@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { select, pointer } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
@@ -426,6 +425,8 @@ const NexusView: React.FC<NexusViewProps> = ({
             return searchMatch && tagMatch && contextMatch;
         });
     }, [allUserNotes, searchQuery, selectedTagIds, selectedContextFilter]);
+    
+    const filteredNoteIds = useMemo(() => new Set(filteredNotes.map(note => note.id)), [filteredNotes]);
 
     const conceptsWithNotesByMap = useMemo(() => {
         const result = new Map<string, { mapName: string, concepts: { id: string | number, name: string, noteCount: number }[] }>();
@@ -690,7 +691,9 @@ const NexusView: React.FC<NexusViewProps> = ({
             <main ref={canvasRef} className="flex-grow h-full relative overflow-hidden">
                 <svg ref={svgRef} className="absolute top-0 left-0 w-full h-full pointer-events-all">
                     <g id="nexus-content-group">
-                        {activeProjectData.nexusLayout?.links.map((link, i) => {
+                        {activeProjectData.nexusLayout?.links
+                            .filter(link => filteredNoteIds.has(link.sourceNoteId) && filteredNoteIds.has(link.targetNoteId))
+                            .map((link, i) => {
                             const sourcePos = notePositions.get(link.sourceNoteId);
                             const targetPos = notePositions.get(link.targetNoteId);
                             if (!sourcePos || !targetPos) return null;
