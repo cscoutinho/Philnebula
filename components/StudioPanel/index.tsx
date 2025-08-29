@@ -385,6 +385,26 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         cleanupAiInteraction();
         (document.activeElement as HTMLElement)?.blur();
 
+        // Capture a stable rect BEFORE mutating the DOM with execCommand
+        const getRangeRect = (r: Range): DOMRect => {
+            const rect = r.getBoundingClientRect();
+            if (rect.width || rect.height) return rect;
+            const rects = r.getClientRects();
+            if (rects.length) return rects[0] as DOMRect;
+            // Fallback: insert a temporary marker to measure caret position
+            const marker = document.createElement('span');
+            marker.style.position = 'absolute';
+            marker.style.width = '0';
+            marker.style.height = '0';
+            const temp = r.cloneRange();
+            temp.collapse(true);
+            temp.insertNode(marker);
+            const mrect = marker.getBoundingClientRect();
+            marker.remove();
+            return mrect;
+        };
+
+        const stableRect = getRangeRect(range);
         savedRange.current = range.cloneRange();
         
         const selection = window.getSelection();
@@ -398,7 +418,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             selection.addRange(savedRange.current);
         }
         
-        setAiPrompt({ text, rect: savedRange.current.getBoundingClientRect(), userInput: '' });
+        setAiPrompt({ text, rect: stableRect, userInput: '' });
     }, [cleanupAiInteraction]);
 
     const handleAskAI = async () => {
@@ -807,6 +827,9 @@ Text: "${analysisText}"`;
                         />
                         <button onClick={handleAskAI} disabled={isAiLoading} className="p-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-500">
                             {isAiLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : <SparkleIcon className="w-4 h-4"/>}
+                        </button>
+                        <button onClick={cleanupAiInteraction} className="p-2 bg-gray-700 text-gray-300 rounded hover:bg-gray-600" aria-label="Cancel AI request">
+                            <X className="w-4 h-4"/>
                         </button>
                     </div>
                 );
