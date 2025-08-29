@@ -181,7 +181,6 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
 
     const panelRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
-    const editorRef = useRef<HTMLDivElement>(null);
     const aiToolbarRef = useRef<HTMLDivElement>(null);
     const aiConversationRef = useRef<HTMLDivElement>(null);
     const aiConvoHeaderRef = useRef<HTMLDivElement>(null);
@@ -250,21 +249,14 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     }, []);
 
     const removeHighlight = useCallback(() => {
-        if (!editorRef.current) return;
-        const spans = Array.from(editorRef.current.querySelectorAll<HTMLSpanElement>('span[style*="background-color"]'));
-    
-        spans.forEach(span => {
-            if (span.style.backgroundColor === HIGHLIGHT_COLOR_RGB) {
-                const parent = span.parentNode;
-                if (parent) {
-                    while (span.firstChild) {
-                        parent.insertBefore(span.firstChild, span);
-                    }
-                    parent.removeChild(span);
-                    parent.normalize();
-                }
-            }
-        });
+        if (!savedRange.current) return;
+        const sel = window.getSelection();
+        if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(savedRange.current);
+            document.execCommand('removeFormat', false);
+            sel.removeAllRanges();
+        }
     }, []);
 
     const cleanupAiInteraction = useCallback(() => {
@@ -352,36 +344,24 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         }
     }, [userNotes, onUpdateUserNotesForMapNode, state.nodeId, isNoteTakingMode]);
 
+    const handleAiRequest = useCallback((text: string, range: Range) => {
+        cleanupAiInteraction();
+        (document.activeElement as HTMLElement)?.blur();
 
-    const handleAiSelection = useCallback(() => {
+        savedRange.current = range.cloneRange();
+        
         const selection = window.getSelection();
-        if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0);
-            if (editorRef.current?.contains(range.commonAncestorContainer)) {
-                cleanupAiInteraction();
-                (document.activeElement as HTMLElement)?.blur();
-                
-                const selectedText = range.toString(); // Extract text before DOM manipulation
-                if (!selectedText.trim()) {
-                    alert("Please select some text before using 'Ask AI'.");
-                    return;
-                }
-
-                savedRange.current = range.cloneRange();
-                
-                document.execCommand('styleWithCSS', false, 'true');
-                document.execCommand('backColor', false, HIGHLIGHT_COLOR_HEX);
-                
-                selection.removeAllRanges();
-                selection.addRange(savedRange.current);
-                
-                setAiPrompt({ text: selectedText, rect: savedRange.current.getBoundingClientRect(), userInput: '' });
-            } else {
-                 alert("Please select text within the Studio editor to use 'Ask AI'.");
-            }
-        } else {
-            alert("Please select some text before using 'Ask AI'.");
+        if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+            document.execCommand('styleWithCSS', false, 'true');
+            document.execCommand('backColor', false, HIGHLIGHT_COLOR_HEX);
+        
+            selection.removeAllRanges();
+            selection.addRange(savedRange.current);
         }
+        
+        setAiPrompt({ text, rect: savedRange.current.getBoundingClientRect(), userInput: '' });
     }, [cleanupAiInteraction]);
 
     const handleAskAI = async () => {
@@ -483,6 +463,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         const latestResponse = getLatestModelResponse();
         if (!latestResponse || !aiConversation) return;
         const { range } = aiConversation;
+        const currentEditor = (range.commonAncestorContainer.parentElement as HTMLElement)?.closest('[contenteditable="true"]');
         cleanupAiInteraction();
 
         const sel = window.getSelection();
@@ -491,10 +472,10 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             sel.addRange(range);
         }
         document.execCommand('insertHTML', false, simpleMarkdownToHtml(latestResponse));
-        if (editorRef.current) {
-            const noteId = editorRef.current.closest('[data-note-id]')?.getAttribute('data-note-id');
+        if (currentEditor) {
+            const noteId = currentEditor.closest('[data-note-id]')?.getAttribute('data-note-id');
             if (noteId) {
-                const newContent = editorRef.current.innerHTML;
+                const newContent = currentEditor.innerHTML;
                 const note = userNotes.find(n => n.id === noteId);
                 if (note) {
                     handleUpdateNote(noteId, note.title, newContent);
@@ -505,29 +486,33 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
 
     const handleInsertBelow = () => {
         const latestResponse = getLatestModelResponse();
-        if (!latestResponse || !aiConversation || !editorRef.current) return;
+        if (!aiConversation || !latestResponse) return;
         const { range } = aiConversation;
+        const currentEditor = (range.commonAncestorContainer.parentElement as HTMLElement)?.closest('[contenteditable="true"]');
         cleanupAiInteraction();
     
-        const editor = editorRef.current;
-        const htmlToInsert = `<br>${simpleMarkdownToHtml(latestResponse)}`;
-        
-        const sel = window.getSelection();
-        if (sel) {
-            sel.removeAllRanges();
-            range.collapse(false);
-            sel.addRange(range);
-            editor.focus();
-        }
-        
-        document.execCommand('insertHTML', false, htmlToInsert);
-        
-        const noteId = editor.closest('[data-note-id]')?.getAttribute('data-note-id');
-        if (noteId) {
-            const newContent = editor.innerHTML;
-            const note = userNotes.find(n => n.id === noteId);
-            if (note) {
-                handleUpdateNote(noteId, note.title, newContent);
+        if (currentEditor) {
+            const htmlToInsert = `<br>${simpleMarkdownToHtml(latestResponse)}`;
+            
+            const sel = window.getSelection();
+            if (sel) {
+                sel.removeAllRanges();
+                range.collapse(false);
+                sel.addRange(range);
+                if (currentEditor instanceof HTMLElement) {
+                    currentEditor.focus();
+                }
+            }
+            
+            document.execCommand('insertHTML', false, htmlToInsert);
+            
+            const noteId = currentEditor.closest('[data-note-id]')?.getAttribute('data-note-id');
+            if (noteId) {
+                const newContent = currentEditor.innerHTML;
+                const note = userNotes.find(n => n.id === noteId);
+                if (note) {
+                    handleUpdateNote(noteId, note.title, newContent);
+                }
             }
         }
     };
@@ -718,7 +703,7 @@ Text: "${analysisText}"`;
                             }}
                             onDelete={handleDeleteNote}
                             onCancel={onClose}
-                            onAiSelection={handleAiSelection}
+                            onAiRequest={handleAiRequest}
                             ai={ai}
                             logActivity={logActivity}
                             nodeName={nodeName}
@@ -738,6 +723,103 @@ Text: "${analysisText}"`;
                     )}
                 </div>
             </div>
+            
+            {aiPrompt && !aiConversation && (() => {
+                if (!panelRef.current) return null;
+                const panelRect = panelRef.current.getBoundingClientRect();
+                
+                const relativeTop = aiPrompt.rect.top - panelRect.top;
+                const relativeLeft = aiPrompt.rect.left - panelRect.left;
+
+                const toolbarWidth = 400;
+                const toolbarHeight = 50; 
+                let top = relativeTop - toolbarHeight;
+                let left = relativeLeft + (aiPrompt.rect.width / 2) - (toolbarWidth / 2);
+
+                if (top < 10) {
+                    top = relativeTop + aiPrompt.rect.height + 5;
+                }
+                if (left < 10) {
+                    left = 10;
+                }
+                if (left + toolbarWidth > size.width - 10) {
+                    left = size.width - toolbarWidth - 10;
+                }
+                
+                return (
+                    <div
+                        ref={aiToolbarRef}
+                        className="absolute bg-gray-900 border border-gray-600 rounded-lg shadow-2xl z-50 p-2 flex items-center gap-2 animate-fade-in"
+                        style={{
+                            top: `${top}px`,
+                            left: `${left}px`,
+                            width: 400,
+                        }}
+                    >
+                        <input
+                            type="text"
+                            value={aiPrompt.userInput}
+                            onChange={(e) => setAiPrompt(p => p ? { ...p, userInput: e.target.value } : null)}
+                            placeholder="e.g., 'Summarize this in one sentence...'"
+                            className="flex-grow bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none"
+                            autoFocus
+                            onKeyDown={(e) => e.key === 'Enter' && handleAskAI()}
+                        />
+                        <button onClick={handleAskAI} disabled={isAiLoading} className="p-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-500">
+                            {isAiLoading ? <RefreshCw className="w-4 h-4 animate-spin"/> : <SparkleIcon className="w-4 h-4"/>}
+                        </button>
+                    </div>
+                );
+            })()}
+
+            {aiConversation && (
+                <div
+                    ref={aiConversationRef}
+                    style={{
+                        top: aiConvoPosition?.y,
+                        left: aiConvoPosition?.x,
+                        width: aiConvoSize.width,
+                        height: aiConvoSize.height,
+                    }}
+                    className="fixed bg-gray-800 border border-gray-600 rounded-lg shadow-2xl z-50 flex flex-col"
+                >
+                    <div ref={aiConvoHeaderRef} className="flex justify-between items-center p-2 border-b border-gray-700 bg-gray-900 rounded-t-lg cursor-grab active:cursor-grabbing">
+                        <h4 className="font-bold text-sm flex items-center gap-2"><SparkleIcon className="w-4 h-4 text-purple-400"/> AI Assistant</h4>
+                        <button onClick={cleanupAiInteraction} className="p-1 text-gray-400 hover:text-white"><X className="w-4 h-4"/></button>
+                    </div>
+                    <div className="flex-grow overflow-y-auto p-3 space-y-4 text-sm">
+                        {aiConversation.history.map((msg, i) => (
+                            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`p-2 rounded-lg max-w-xs ${msg.role === 'user' ? 'bg-blue-600' : 'bg-gray-700'}`}>
+                                    {msg.content.split('\n').map((line, j) => <p key={j}>{line}</p>)}
+                                </div>
+                            </div>
+                        ))}
+                        {isAiLoading && <div className="text-gray-400 text-center">...</div>}
+                        <div ref={conversationEndRef}></div>
+                    </div>
+                    <div className="p-2 border-t border-gray-700 space-y-2">
+                        <div className="flex gap-2">
+                            <button onClick={handleReplace} className="flex-grow px-2 py-1 text-xs bg-gray-700 rounded hover:bg-gray-600">Replace Selected</button>
+                            <button onClick={handleInsertBelow} className="flex-grow px-2 py-1 text-xs bg-gray-700 rounded hover:bg-gray-600">Insert Below</button>
+                            <button onClick={handleCopy} className="flex-grow px-2 py-1 text-xs bg-gray-700 rounded hover:bg-gray-600">Copy</button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="text"
+                                value={followUpInput}
+                                onChange={(e) => setFollowUpInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleFollowUp()}
+                                placeholder="Follow up..."
+                                className="flex-grow bg-gray-900 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none"
+                            />
+                            <button onClick={handleFollowUp} disabled={isAiLoading} className="p-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:bg-gray-500">
+                                <SendIcon className="w-4 h-4"/>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             
             <div
                 onPointerDown={handleResizePointerDown}
@@ -760,19 +842,20 @@ Text: "${analysisText}"`;
     );
 };
 
-
-const EditableNoteCard: React.FC<{
+interface EditableNoteCardProps {
     note: UserNote;
     onSave: (id: string, title: string, content: string) => void;
     onDelete: (id: string) => void;
     onCancel: () => void;
-    onAiSelection: () => void;
+    onAiRequest: (text: string, range: Range) => void;
     ai: GoogleGenAI;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
     nodeName: string;
     allProjectNotes: (UserNote & { mapNodeId: string | number; mapNodeName: string; mapId: string; mapName: string; })[];
     onNavigateToNexusNote: (noteId: string) => void;
-}> = ({ note, onSave, onDelete, onCancel, onAiSelection, ai, logActivity, nodeName, allProjectNotes, onNavigateToNexusNote }) => {
+}
+
+const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDelete, onCancel, onAiRequest, ai, logActivity, nodeName, allProjectNotes, onNavigateToNexusNote }) => {
     const [title, setTitle] = useState(note.title);
     const [content, setContent, undo, redo, canUndo, canRedo] = useHistoryState(note.content);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -789,6 +872,25 @@ const EditableNoteCard: React.FC<{
     
     const [linkEditState, setLinkEditState] = useState<{ target: HTMLSpanElement, rect: DOMRect } | null>(null);
     const [aliasText, setAliasText] = useState('');
+
+    const handleAiSelection = useCallback(() => {
+        const selection = window.getSelection();
+        if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            if (editorRef.current?.contains(range.commonAncestorContainer)) {
+                const selectedText = range.toString();
+                if (!selectedText.trim()) {
+                    alert("Please select some text before using 'Ask AI'.");
+                    return;
+                }
+                onAiRequest(selectedText, range);
+            } else {
+                 alert("Please select text within the Studio editor to use 'Ask AI'.");
+            }
+        } else {
+            alert("Please select some text before using 'Ask AI'.");
+        }
+    }, [onAiRequest]);
 
     const linkResults = useMemo(() => {
         if (!linkSearch || !linkSearch.query.trim()) return [];
@@ -989,7 +1091,6 @@ const EditableNoteCard: React.FC<{
                 const textContent = textNode.textContent;
                 const match = textContent.substring(0, range.startOffset).match(/\[\[([^\][]*)$/);
                 if (match) {
-                    const query = match[1];
                     const tempRange = document.createRange();
                     tempRange.setStart(textNode, match.index!);
                     tempRange.setEnd(textNode, range.startOffset);
@@ -1003,10 +1104,10 @@ const EditableNoteCard: React.FC<{
 
                         const position = {
                             top: rangeRect.bottom - cardRootRect.top,
-                            left: rangeRect.left - cardRootRect.left,
+                            left: rangeRect.left - cardRootRect.top,
                         };
                         
-                        setLinkSearch({ query, range: tempRange, position });
+                        setLinkSearch({ query: match[1], range: tempRange, position });
                     }
                     return;
                 }
@@ -1202,7 +1303,7 @@ const EditableNoteCard: React.FC<{
                     {isTranscribing ? 'Transcribing...' : isRecording ? 'Recording...' : null}
                 </button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
-                <button onClick={onAiSelection} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1.5 text-sm" title="Ask AI to edit selected text">
+                <button onMouseDown={(e) => e.preventDefault()} onClick={handleAiSelection} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1.5 text-sm" title="Ask AI to edit selected text">
                     <SparkleIcon className="w-4 h-4 text-purple-400"/>
                     Ask AI
                 </button>
