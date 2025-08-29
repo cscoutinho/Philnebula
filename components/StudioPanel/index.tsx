@@ -249,15 +249,45 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     }, []);
 
     const removeHighlight = useCallback(() => {
-        if (!savedRange.current) return;
-        const sel = window.getSelection();
-        if (sel) {
-            sel.removeAllRanges();
-            sel.addRange(savedRange.current);
-            document.execCommand('removeFormat', false);
-            sel.removeAllRanges();
+        // Robustly remove the blue highlight applied by execCommand('backColor') within the active editor
+        const getEditorRoot = (): HTMLElement | null => {
+            if (savedRange.current) {
+                const common = savedRange.current.commonAncestorContainer as Node;
+                const elem = (common.nodeType === Node.ELEMENT_NODE ? (common as Element) : (common.parentElement)) || null;
+                return elem ? (elem.closest('[contenteditable="true"]') as HTMLElement | null) : null;
+            }
+            // Fallback: search within the Studio panel
+            return panelRef.current ? (panelRef.current.querySelector('[contenteditable="true"]') as HTMLElement | null) : null;
+        };
+
+        const editor = getEditorRoot();
+        if (!editor) return;
+
+        try {
+            const candidates = editor.querySelectorAll<HTMLElement>('[style*="background-color:"], [style*="background:"], [bgcolor], span, font');
+            candidates.forEach(el => {
+                // Check inline style first for exact match
+                const inline = el.getAttribute('style') || '';
+                const hasHex = inline.toLowerCase().includes(`background-color: ${HIGHLIGHT_COLOR_HEX}`);
+                const hasRgb = inline.toLowerCase().includes(`background-color: ${HIGHLIGHT_COLOR_RGB}`);
+                // Some browsers serialize as rgba(..., 1)
+                const hasRgba = inline.toLowerCase().includes('background-color: rgba(58, 110, 255');
+                const hasBgShorthand = inline.toLowerCase().includes('background:') && (inline.toLowerCase().includes(HIGHLIGHT_COLOR_HEX) || inline.toLowerCase().includes('58, 110, 255'));
+                const hasBgColorAttr = (el as HTMLElement).getAttribute('bgcolor')?.toLowerCase() === HIGHLIGHT_COLOR_HEX;
+
+                if (hasHex || hasRgb || hasRgba || hasBgShorthand || hasBgColorAttr) {
+                    el.style.background = '';
+                    el.style.backgroundColor = '';
+                    if (hasBgColorAttr) el.removeAttribute('bgcolor');
+                    // Clean empty style attribute
+                    if (el.getAttribute('style') === '') el.removeAttribute('style');
+                }
+            });
+        } catch (e) {
+            // Swallow cleanup errors silently; better to leave a harmless highlight than crash
+            console.debug('Highlight cleanup skipped:', e);
         }
-    }, []);
+    }, [panelRef]);
 
     const cleanupAiInteraction = useCallback(() => {
         setAiPrompt(null);
@@ -281,6 +311,13 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [cleanupAiInteraction]);
+
+    // Cleanup on unmount to ensure no lingering highlight remains if the Studio is closed
+    useEffect(() => {
+        return () => {
+            removeHighlight();
+        };
+    }, [removeHighlight]);
     
      useEffect(() => {
         conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -356,7 +393,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             selection.addRange(range);
             document.execCommand('styleWithCSS', false, 'true');
             document.execCommand('backColor', false, HIGHLIGHT_COLOR_HEX);
-        
+            // Keep the visual selection for positioning, but restore the savedRange
             selection.removeAllRanges();
             selection.addRange(savedRange.current);
         }
@@ -377,6 +414,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
             setChatSession(newChat);
             
             const response = await newChat.sendMessage({ message: initialPrompt });
+            const responseText = response.text ?? '';
             
             logActivity('ASK_AI_ASSISTANT', {
                 context: analysisMode ? 'Argument Analysis' : nodeName,
@@ -385,7 +423,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                 provenance: {
                     prompt: initialPrompt,
                     systemInstruction,
-                    rawResponse: response.text,
+                    rawResponse: responseText,
                     model: 'gemini-2.5-flash',
                     inputTokens: response.usageMetadata?.promptTokenCount,
                     outputTokens: response.usageMetadata?.candidatesTokenCount,
@@ -397,7 +435,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                 range: savedRange.current,
                 history: [
                     { role: 'user', content: userInstruction },
-                    { role: 'model', content: response.text }
+                    { role: 'model', content: responseText }
                 ]
             });
 
@@ -423,6 +461,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     
         try {
             const response = await chatSession.sendMessage({ message: currentInput });
+            const responseText = response.text ?? '';
 
             logActivity('ASK_AI_ASSISTANT', {
                 context: analysisMode ? 'Argument Analysis' : nodeName,
@@ -431,7 +470,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                 provenance: {
                     prompt: currentInput,
                     systemInstruction: AI_SYSTEM_INSTRUCTION,
-                    rawResponse: response.text,
+                    rawResponse: responseText,
                     model: 'gemini-2.5-flash',
                     inputTokens: response.usageMetadata?.promptTokenCount,
                     outputTokens: response.usageMetadata?.candidatesTokenCount,
@@ -439,7 +478,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
                 }
             });
 
-            const modelMessage = { role: 'model' as const, content: response.text };
+            const modelMessage = { role: 'model' as const, content: responseText };
             setAiConversation(convo => {
                 if (!convo) return null;
                 // Since the user message was already added, just append the model's response
@@ -551,7 +590,8 @@ Text: "${analysisText}"`;
                     }
                 }
             });
-            const result = JSON.parse(response.text);
+            const text = response.text ?? '{"premises":[],"conclusion":""}';
+            const result = JSON.parse(text);
             if (result.premises && result.conclusion) {
                 onDeconstruct(result);
             }
@@ -1136,9 +1176,6 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
         const selection = window.getSelection();
         if (!selection) return;
 
-        // Store the current cursor position before removing ranges
-        const currentRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
-        
         // Delete the [[ pattern and any partial query text
         range.deleteContents();
         
@@ -1303,7 +1340,11 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
                     {isTranscribing ? 'Transcribing...' : isRecording ? 'Recording...' : null}
                 </button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
-                <button onMouseDown={(e) => e.preventDefault()} onClick={handleAiSelection} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1.5 text-sm" title="Ask AI to edit selected text">
+                <button
+                    onMouseDown={(e) => { e.preventDefault(); handleAiSelection(); }}
+                    className="p-1.5 text-gray-300 hover:bg-gray-700 rounded flex items-center gap-1.5 text-sm"
+                    title="Ask AI to edit selected text"
+                >
                     <SparkleIcon className="w-4 h-4 text-purple-400"/>
                     Ask AI
                 </button>
