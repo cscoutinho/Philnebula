@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { D3Node, ProjectActivityType, ParsedMindMapNode, MappingSuggestion, BridgeAnalysis } from '../types';
 import * as conceptualBridgeService from '../services/conceptualBridgeService';
@@ -22,7 +22,7 @@ const MindMapNode: React.FC<{ node: ParsedMindMapNode; selectedNodeName: string 
             {linkedNodeNames.has(node.name) && <LinkIcon className="w-4 h-4 text-green-400 flex-shrink-0" />}
             <span className="flex-grow">{node.name}</span>
         </button>
-        {node.children.map((child, i) => <MindMapNode key={i} node={child} selectedNodeName={selectedNodeName} onSelect={onSelect} level={level + 1} linkedNodeNames={linkedNodeNames} />)}
+        {node.children && Array.isArray(node.children) && node.children.map((child, i) => <MindMapNode key={i} node={child} selectedNodeName={selectedNodeName} onSelect={onSelect} level={level + 1} linkedNodeNames={linkedNodeNames} />)}
     </div>
 );
 

@@ -30,10 +30,29 @@ export const parseMindMapImage = async (
     });
 
     try {
+        if (!response.text) {
+            throw new Error("AI response is empty");
+        }
+        
         const cleanedText = response.text.trim().replace(/^```json\n?/, '').replace(/```$/, '');
         const parsedJson = JSON.parse(cleanedText);
-        if (typeof parsedJson.name === 'string' && Array.isArray(parsedJson.children)) {
-            return parsedJson;
+        
+        // Função recursiva para garantir que todos os nós tenham children como array
+        const validateAndFixNode = (node: any): ParsedMindMapNode => {
+            if (typeof node.name !== 'string') {
+                throw new Error("Node name must be a string");
+            }
+            
+            return {
+                name: node.name,
+                children: Array.isArray(node.children) 
+                    ? node.children.map(validateAndFixNode)
+                    : []
+            };
+        };
+        
+        if (typeof parsedJson.name === 'string') {
+            return validateAndFixNode(parsedJson);
         }
         throw new Error("Parsed JSON does not match expected structure.");
     } catch (e) {
@@ -79,6 +98,10 @@ export const getMappingSuggestions = async (
             }
         }
     });
+
+    if (!response.text) {
+        throw new Error("AI response is empty");
+    }
 
     const results = JSON.parse(response.text);
     const nodeMap = new Map(allPhilPapersNodes.map(n => [n.name, n]));
@@ -141,6 +164,10 @@ export const getOverallAnalysis = async (
             }
         }
     });
+
+    if (!response.text) {
+        throw new Error("AI response is empty");
+    }
 
     return JSON.parse(response.text);
 };
