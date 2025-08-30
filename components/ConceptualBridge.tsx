@@ -59,23 +59,45 @@ const ConceptualBridge: React.FC<ConceptualBridgeProps> = ({ isOpen, onClose, ai
         setError(null);
 
         try {
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                const base64String = (e.target?.result as string).split(',')[1];
-                try {
-                    const result = await conceptualBridgeService.parseMindMapImage(ai, base64String, file.type);
-                    setParsedMap(result);
-                    setView('mapping');
-                    logActivity('CONCEPTUAL_BRIDGE_IMAGE_PARSE', {fileName: file.name});
-                } catch (err) {
-                    setError(err instanceof Error ? err.message : "Failed to parse mind map image.");
-                    setView('error');
-                }
-            };
-            reader.readAsDataURL(file);
+            if (file.type === 'application/json') {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const jsonString = e.target?.result as string;
+                    try {
+                        const result = conceptualBridgeService.parseMindMapJson(jsonString);
+                        setParsedMap(result);
+                        setView('mapping');
+                        logActivity('CONCEPTUAL_BRIDGE_IMAGE_PARSE', { fileName: file.name, method: 'json' });
+                    } catch (err) {
+                        setError(err instanceof Error ? err.message : "Falha ao analisar o JSON do mapa mental.");
+                        setView('error');
+                    }
+                };
+                reader.readAsText(file);
+            } else if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const base64String = (e.target?.result as string).split(',')[1];
+                    try {
+                        const result = await conceptualBridgeService.parseMindMapImage(ai, base64String, file.type);
+                        setParsedMap(result);
+                        setView('mapping');
+                        logActivity('CONCEPTUAL_BRIDGE_IMAGE_PARSE', { fileName: file.name, method: 'image' });
+                    } catch (err) {
+                        setError(err instanceof Error ? err.message : "Falha ao analisar a imagem do mapa mental.");
+                        setView('error');
+                    }
+                };
+                reader.readAsDataURL(file);
+            } else {
+                setError("Tipo de arquivo não suportado. Por favor, envie uma imagem ou um arquivo JSON.");
+                setView('error');
+            }
         } catch (err) {
-            setError("Failed to read file.");
+            setError("Falha ao ler o arquivo.");
             setView('error');
+        } finally {
+            event.target.value = '';
         }
     };
 
@@ -119,16 +141,16 @@ const ConceptualBridge: React.FC<ConceptualBridgeProps> = ({ isOpen, onClose, ai
 
     const renderIdle = () => (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.json" className="hidden" />
             <BridgeIcon className="w-20 h-20 text-cyan-400 mb-6"/>
             <h3 className="text-2xl font-bold text-white">Ponte Conceitual</h3>
-            <p className="mt-2 text-gray-400 max-w-md">Importe uma imagem do seu mapa mental para conectá-lo com a taxonomia da Nebula e obter insights analíticos da IA.</p>
+            <p className="mt-2 text-gray-400 max-w-md">Importe uma imagem ou JSON do seu mapa mental para conectá-lo com a taxonomia da Nebula e obter insights analíticos da IA.</p>
             <button
                 onClick={() => fileInputRef.current?.click()}
                 className="mt-8 flex items-center gap-3 px-6 py-3 bg-cyan-600 text-white font-bold rounded-lg hover:bg-cyan-500 transition-colors"
             >
                 <UploadCloudIcon className="w-6 h-6"/>
-                Importar Imagem do Mapa Mental
+                Importar Mapa Mental (Imagem ou JSON)
             </button>
         </div>
     );

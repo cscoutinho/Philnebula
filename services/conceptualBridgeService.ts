@@ -8,8 +8,9 @@ export const parseMindMapImage = async (
     mimeType: string
 ): Promise<ParsedMindMapNode> => {
     const model = 'gemini-2.5-flash';
-    const systemInstruction = "You are a multimodal analysis engine. Your task is to accurately convert an image of a mind map into a structured, recursive JSON object. Respond ONLY with the JSON object.";
-    const prompt = `Analise esta imagem de um mapa mental. Identifique todos os nós de texto e sua estrutura hierárquica. O nó raiz é o nó mais central ou superior. Sua saída DEVE ser um único objeto JSON representando o nó raiz, com todos os sub-nós aninhados recursivamente em arrays de 'children'. O formato de cada nó deve ser { "name": "Texto do Nó", "children": [...] }.`;
+    const prompt = `You are a multimodal analysis engine. Your task is to accurately convert an image of a mind map into a structured, recursive JSON object. Respond ONLY with the JSON object.
+
+Analise esta imagem de um mapa mental. Identifique todos os nós de texto e sua estrutura hierárquica. O nó raiz é o nó mais central ou superior. Sua saída DEVE ser um único objeto JSON representando o nó raiz, com todos os sub-nós aninhados recursivamente em arrays de 'children'. O formato de cada nó deve ser { "name": "Texto do Nó", "children": [...] }.`;
     
     const imagePart = {
       inlineData: {
@@ -23,10 +24,6 @@ export const parseMindMapImage = async (
     const response = await ai.models.generateContent({
       model,
       contents: { parts: [imagePart, textPart] },
-      config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-      }
     });
 
     try {
@@ -170,4 +167,28 @@ export const getOverallAnalysis = async (
     }
 
     return JSON.parse(response.text);
+};
+
+export const parseMindMapJson = (jsonString: string): ParsedMindMapNode => {
+    try {
+        const data = JSON.parse(jsonString);
+
+        const transformNode = (node: any): ParsedMindMapNode => {
+            if (!node || typeof node.topic !== 'string') {
+                throw new Error("O nó inválido na estrutura: a propriedade 'topic' está ausente ou não é uma string.");
+            }
+            return {
+                name: node.topic,
+                children: Array.isArray(node.children) ? node.children.map(transformNode) : []
+            };
+        };
+
+        return transformNode(data);
+    } catch (e) {
+        console.error("Failed to parse mind map JSON:", e);
+        if (e instanceof Error) {
+             throw new Error(`Formato ou estrutura de JSON inválido. ${e.message}`);
+        }
+        throw new Error("Formato ou estrutura de JSON inválido. O arquivo pode estar corrompido ou não ser um mapa mental válido.");
+    }
 };
