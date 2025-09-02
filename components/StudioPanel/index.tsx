@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { GoogleGenAI, Type, Chat } from '@google/genai';
 import type { ProjectActivityType, KindleNote, UserNote, AppTag } from '../../types';
@@ -65,7 +66,7 @@ interface StudioPanelProps {
     allProjectTags: AppTag[];
     onUpdateTags: (tags: AppTag[]) => void;
     onNavigateToNexusTag: (tagId: string) => void;
-    onNavigateToNexusNote: (noteId: string) => void;
+    onNavigateToNote: (noteId: string) => void;
 }
 
 
@@ -161,7 +162,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
     onDeconstruct,
     activeUserNote,
     allProjectNotes,
-    onNavigateToNexusNote,
+    onNavigateToNote,
 }) => {
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [size, setSize] = useState({ width: 700, height: 550 });
@@ -768,7 +769,7 @@ Text: "${analysisText}"`;
                             logActivity={logActivity}
                             nodeName={nodeName}
                             allProjectNotes={allProjectNotes}
-                            onNavigateToNexusNote={onNavigateToNexusNote}
+                            onNavigateToNote={onNavigateToNote}
                         />
                     ) : (
                         <div className="flex-grow flex flex-col items-center justify-center text-center text-gray-500 p-4">
@@ -915,10 +916,10 @@ interface EditableNoteCardProps {
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
     nodeName: string;
     allProjectNotes: (UserNote & { mapNodeId: string | number; mapNodeName: string; mapId: string; mapName: string; })[];
-    onNavigateToNexusNote: (noteId: string) => void;
+    onNavigateToNote: (noteId: string) => void;
 }
 
-const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDelete, onCancel, onAiRequest, ai, logActivity, nodeName, allProjectNotes, onNavigateToNexusNote }) => {
+const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDelete, onCancel, onAiRequest, ai, logActivity, nodeName, allProjectNotes, onNavigateToNote }) => {
     const [title, setTitle] = useState(note.title);
     const [content, setContent, undo, redo, canUndo, canRedo] = useHistoryState(note.content);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -1167,7 +1168,7 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
 
                         const position = {
                             top: rangeRect.bottom - cardRootRect.top,
-                            left: rangeRect.left - cardRootRect.top,
+                            left: rangeRect.left - cardRootRect.left,
                         };
                         
                         setLinkSearch({ query: match[1], range: tempRange, position });
@@ -1254,7 +1255,7 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
                 e.preventDefault();
                 const noteId = target.getAttribute('data-note-id');
                 if (noteId) {
-                    onNavigateToNexusNote(noteId);
+                    onNavigateToNote(noteId);
                 }
             }
         };
@@ -1267,7 +1268,7 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
             }
             document.removeEventListener('click', handleClick);
         };
-    }, [onNavigateToNexusNote, linkEditState]);
+    }, [onNavigateToNote, linkEditState]);
 
     const handleUpdateAlias = () => {
         if (!linkEditState || !editorRef.current) return;
@@ -1446,7 +1447,7 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
                              const highlightedContext = context.replace(new RegExp(escapeRegExp(linkText), 'i'), `<strong class="text-yellow-300 bg-yellow-500/20 px-1 rounded">${linkText}</strong>`);
                              return (
                                 <li key={note.id} className="mb-3 last:mb-0">
-                                    <button onClick={() => { onCancel(); onNavigateToNexusNote(note.id); }} className="font-semibold text-cyan-300 hover:underline text-left">
+                                    <button onClick={() => { onCancel(); onNavigateToNote(note.id); }} className="font-semibold text-cyan-300 hover:underline text-left">
                                         {note.title}
                                     </button>
                                     <p className="text-xs text-gray-500 italic px-2 border-l-2 border-gray-600 ml-1 mt-1" dangerouslySetInnerHTML={{ __html: highlightedContext }} />

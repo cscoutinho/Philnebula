@@ -17,8 +17,7 @@ import MapSwitcher from './components/MapSwitcher';
 import ProjectDiaryPanel from './components/ProjectDiaryPanel';
 import BeliefFlipChallenge from './components/BeliefFlipChallenge';
 import ConfirmDialog from './components/ConfirmDialog';
-import ConceptualBridge from './components/ConceptualBridge';
-import { BrainCircuit, SettingsIcon, DiaryIcon, FlaskConicalIcon, LightbulbIcon, BookOpenIcon, X, RefreshCw, GraduationCapIcon, ChevronDown, BridgeIcon } from './components/icons';
+import { BrainCircuit, SettingsIcon, DiaryIcon, FlaskConicalIcon, LightbulbIcon, BookOpenIcon, X, RefreshCw, GraduationCapIcon, ChevronDown } from './components/icons';
 import { useSessionManager } from './hooks/useSessionManager';
 import { useFeedManager } from './hooks/useFeedManager';
 import { useNebula } from './hooks/useNebula';
@@ -195,7 +194,6 @@ const App: React.FC = () => {
     const [isDiaryOpen, setIsDiaryOpen] = useState(false);
     const [isNotesInboxOpen, setIsNotesInboxOpen] = useState(false);
     const [isChallengeOpen, setIsChallengeOpen] = useState(false);
-    const [isConceptualBridgeOpen, setIsConceptualBridgeOpen] = useState(false);
     const [initialWorkbenchData, setInitialWorkbenchData] = useState<any>(null);
     const [notesToPlace, setNotesToPlace] = useState<KindleNote[] | null>(null);
     const [nexusFocusNoteId, setNexusFocusNoteId] = useState<string | null>(null);
@@ -443,12 +441,6 @@ const App: React.FC = () => {
         setCurrentView('nexus');
     }, []);
 
-    const handleNavigateToNexusTag = useCallback((tagId: string) => {
-        setStudioState(null);
-        setNexusFilterTagId(tagId);
-        setCurrentView('nexus');
-    }, []);
-
     const handleNavigateToMapNode = useCallback((mapId: string, nodeId: string | number) => {
         if (activeMap?.id !== mapId) {
             handleSwitchMap(mapId);
@@ -456,6 +448,28 @@ const App: React.FC = () => {
         setCurrentView('map');
         setFocusMapNode({ mapId, nodeId });
     }, [handleSwitchMap, activeMap?.id]);
+
+    const handleNavigateToMapNote = useCallback((userNoteId: string) => {
+        const targetNoteInfo = allUserNotesWithNodeInfo.find(un => un.id === userNoteId);
+        if (!targetNoteInfo || targetNoteInfo.contexts.length === 0) {
+            console.warn(`Could not find context for note ID: ${userNoteId}`);
+            return;
+        }
+
+        let targetContext = targetNoteInfo.contexts.find(c => c.mapId === activeMap?.id);
+        if (!targetContext) {
+            targetContext = targetNoteInfo.contexts[0];
+        }
+
+        handleNavigateToMapNode(targetContext.mapId, targetContext.mapNodeId);
+        setStudioState(null);
+    }, [allUserNotesWithNodeInfo, activeMap, handleNavigateToMapNode]);
+
+    const handleNavigateToNexusTag = useCallback((tagId: string) => {
+        setStudioState(null);
+        setNexusFilterTagId(tagId);
+        setCurrentView('nexus');
+    }, []);
 
     // --- Research Analysis Handler ---
     const handleAnalyzeResearchTrends = useCallback(async (feed: TrackedFeed) => {
@@ -1186,9 +1200,6 @@ const App: React.FC = () => {
                  <div className="flex items-center gap-2 pointer-events-auto">
                     {currentView === 'map' && (
                         <>
-                            <button onClick={() => setIsConceptualBridgeOpen(true)} className="p-2.5 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-green-500" aria-label="Open Conceptual Bridge">
-                                <BridgeIcon className="w-5 h-5" />
-                            </button>
                              <button onClick={() => setIsNotesInboxOpen(true)} className="p-2.5 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-black focus:ring-cyan-500" aria-label="Open Notes Inbox">
                                 <BookOpenIcon className="w-5 h-5" />
                             </button>
@@ -1254,7 +1265,7 @@ const App: React.FC = () => {
                     onUpdateUserNote={() => {}}
                     onUpdateTags={() => {}}
                     onNavigateToNexusTag={() => {}}
-                    onNavigateToNexusNote={() => {}}
+                    onNavigateToNote={() => {}}
                 />
             )}
 
@@ -1281,7 +1292,7 @@ const App: React.FC = () => {
                         allProjectTags={activeProjectData.tags || []}
                         onUpdateTags={handleUpdateTags}
                         onNavigateToNexusTag={handleNavigateToNexusTag}
-                        onNavigateToNexusNote={handleNavigateToNexusNote}
+                        onNavigateToNote={handleNavigateToMapNote}
                     />
                 );
             })()}
@@ -1305,7 +1316,7 @@ const App: React.FC = () => {
                     allProjectTags={activeProjectData.tags || []}
                     onUpdateTags={handleUpdateTags}
                     onNavigateToNexusTag={handleNavigateToNexusTag}
-                    onNavigateToNexusNote={handleNavigateToNexusNote}
+                    onNavigateToNote={handleNavigateToNexusNote}
                 />
             )}
 
@@ -1353,14 +1364,6 @@ const App: React.FC = () => {
                 data={researchAnalysisData}
                 nodeName={currentAnalysisNodeName}
                 publicationTitleToUrlMap={publicationTitleToUrlMap}
-            />
-
-            <ConceptualBridge
-                isOpen={isConceptualBridgeOpen}
-                onClose={() => setIsConceptualBridgeOpen(false)}
-                ai={ai}
-                allPhilPapersNodes={data?.nodes || []}
-                logActivity={logActivity}
             />
         </div>
     );

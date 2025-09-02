@@ -205,9 +205,7 @@ export type ProjectActivityType =
   | 'ANALYZE_RESEARCH_TRENDS'
   | 'VOICE_NOTE'
   | 'CREATE_NOTE'
-  | 'DELETE_NOTE'
-  | 'CONCEPTUAL_BRIDGE_IMAGE_PARSE'
-  | 'CONCEPTUAL_BRIDGE_ANALYSIS';
+  | 'DELETE_NOTE';
 
 export interface ProjectActivity {
   id: string;
@@ -384,24 +382,6 @@ export interface DefinitionAnalysisState {
     definitions: DefinitionResult[];
     counterExamples: Map<DefinitionResult, CounterExampleResult[]>;
     error: string | null;
-}
-
-// --- Types for Conceptual Bridge ---
-export interface ParsedMindMapNode {
-  name: string;
-  children: ParsedMindMapNode[];
-}
-
-export interface MappingSuggestion {
-  philPapersNodeId: number;
-  philPapersNodeName: string;
-  rationale: string;
-}
-
-export interface BridgeAnalysis {
-  nonEquivalentNodes: { name: string; reason: string }[];
-  uncoveredCategories: { name: string; reason: string }[];
-  restructuringAdvice: string[];
 }
 
 // --- START OF MAP BUILDER TYPES ---
