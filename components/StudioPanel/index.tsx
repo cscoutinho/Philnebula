@@ -1,8 +1,7 @@
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { GoogleGenAI, Type, Chat } from '@google/genai';
 import type { ProjectActivityType, KindleNote, UserNote, AppTag } from '../../types';
-import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon, QuoteIcon } from '../icons';
+import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon, QuoteIcon, ChevronLeft, ChevronRight } from '../icons';
 
 const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boolean) => void, () => void, () => void, boolean, boolean] => {
     const [history, setHistory] = useState<T[]>([initialState]);
@@ -179,6 +178,7 @@ const StudioPanel: React.FC<StudioPanelProps> = ({
 
     const [userNotes, setUserNotes] = useState<UserNote[]>(initialUserNotes);
     const [editingNoteId, setEditingNoteId] = useState<string | null>(activeUserNote ? activeUserNote.id : (initialUserNotes.length > 0 ? initialUserNotes[0].id : null));
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
     const panelRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
@@ -719,31 +719,46 @@ Text: "${analysisText}"`;
             </div>
 
             <div className="flex-grow flex overflow-hidden">
-                <div className="w-1/3 min-w-[200px] border-r border-gray-700 flex flex-col bg-gray-800/50">
-                    <div className="flex-grow flex flex-col overflow-y-auto">
-                        <ul className="flex-grow p-2 space-y-1">
-                            {userNotes.map(note => (
-                                <li key={note.id}>
-                                    <button 
-                                        onClick={() => setEditingNoteId(note.id)}
-                                        className={`w-full text-left p-2 rounded-md ${editingNoteId === note.id ? 'bg-cyan-800/80 ring-1 ring-cyan-500' : 'hover:bg-gray-700/70'}`}
-                                    >
-                                        <p className="font-semibold text-gray-100 truncate">{note.title}</p>
-                                        <p className="text-xs text-gray-400 mt-1 truncate">{note.content.replace(/<[^>]+>/g, '') || 'Empty note'}</p>
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                        <div className="p-2 border-t border-gray-700">
-                            <button onClick={handleAddNewNote} className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">
-                                <Plus className="w-4 h-4" />
-                                Add New Note
-                            </button>
-                        </div>
+                <div className={`${isSidebarCollapsed ? 'w-12' : 'w-1/3 min-w-[200px]'} border-r border-gray-700 flex flex-col bg-gray-800/50 transition-all duration-300`}>
+                    <div className={`flex-shrink-0 p-2 border-b border-gray-700 flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+                        {!isSidebarCollapsed && (
+                            <h4 className="font-semibold text-gray-300 ml-2">Notes</h4>
+                        )}
+                        <button 
+                            onClick={() => setIsSidebarCollapsed(prev => !prev)} 
+                            className="p-1.5 text-gray-400 hover:bg-gray-700 rounded-md"
+                            aria-label={isSidebarCollapsed ? 'Expand notes panel' : 'Collapse notes panel'}
+                        >
+                            {isSidebarCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+                        </button>
                     </div>
+
+                    {!isSidebarCollapsed && (
+                        <div className="flex-grow flex flex-col overflow-hidden">
+                            <ul className="flex-grow p-2 space-y-1 overflow-y-auto">
+                                {userNotes.map(note => (
+                                    <li key={note.id}>
+                                        <button 
+                                            onClick={() => setEditingNoteId(note.id)}
+                                            className={`w-full text-left p-2 rounded-md ${editingNoteId === note.id ? 'bg-cyan-800/80 ring-1 ring-cyan-500' : 'hover:bg-gray-700/70'}`}
+                                        >
+                                            <p className="font-semibold text-gray-100 truncate">{note.title}</p>
+                                            <p className="text-xs text-gray-400 mt-1 truncate">{note.content.replace(/<[^>]+>/g, '') || 'Empty note'}</p>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="p-2 border-t border-gray-700">
+                                <button onClick={handleAddNewNote} className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">
+                                    <Plus className="w-4 h-4" />
+                                    Add New Note
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                <div className="w-2/3 flex-grow flex flex-col">
+                <div className={`${isSidebarCollapsed ? 'w-full' : 'w-2/3'} flex-grow flex flex-col transition-all duration-300`}>
                     {noteToEdit ? (
                         <EditableNoteCard
                             key={editingNoteId}

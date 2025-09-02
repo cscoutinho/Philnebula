@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { select, pointer } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
@@ -170,10 +171,11 @@ const SidePanel: React.FC<{
     selectedContextFilter: ContextFilter;
     onSetContextFilter: (filter: ContextFilter) => void;
     noteCountsByMap: Map<string, number>;
+    totalNoteCount: number;
 }> = ({ 
     tags, onUpdateTags, searchQuery, setSearchQuery, selectedTagIds, setSelectedTagIds, isCollapsed, onToggleCollapse, 
     session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation, 
-    tagCounts, maps, conceptsWithNotesByMap, selectedContextFilter, onSetContextFilter, noteCountsByMap
+    tagCounts, maps, conceptsWithNotesByMap, selectedContextFilter, onSetContextFilter, noteCountsByMap, totalNoteCount
 }) => {
     const [editingTag, setEditingTag] = useState<AppTag | null>(null);
     const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
@@ -254,6 +256,9 @@ const SidePanel: React.FC<{
                                 <li>
                                     <button onClick={() => onSetContextFilter(null)} className={`w-full text-left p-1.5 rounded flex items-center justify-between ${!selectedContextFilter ? 'bg-cyan-800/80' : 'hover:bg-gray-700/70'}`}>
                                         <span>All Notes</span>
+                                        <span className="text-xs font-mono bg-gray-700 text-gray-300 rounded-full w-6 h-6 flex items-center justify-center">
+                                            {totalNoteCount}
+                                        </span>
                                     </button>
                                 </li>
                                 {maps.map(map => (
@@ -457,8 +462,9 @@ const NexusView: React.FC<NexusViewProps> = ({
     const noteCountsByMap = useMemo(() => {
         const counts = new Map<string, number>();
         for (const note of allUserNotes) {
-            for (const context of note.contexts) {
-                counts.set(context.mapId, (counts.get(context.mapId) || 0) + 1);
+            const mapIdsForNote = new Set(note.contexts.map(c => c.mapId));
+            for (const mapId of mapIdsForNote) {
+                counts.set(mapId, (counts.get(mapId) || 0) + 1);
             }
         }
         return counts;
@@ -683,6 +689,7 @@ const NexusView: React.FC<NexusViewProps> = ({
                 selectedContextFilter={selectedContextFilter}
                 onSetContextFilter={setSelectedContextFilter}
                 noteCountsByMap={noteCountsByMap}
+                totalNoteCount={allUserNotes.length}
             />
             
             <main ref={canvasRef} className="flex-grow h-full relative overflow-hidden">
