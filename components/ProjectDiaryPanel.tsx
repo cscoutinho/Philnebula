@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ProjectActivity, ProjectActivityType } from '../types';
-import { ChevronLeft, BrainCircuit, Network, PlusCircle, LinkIcon, RssIcon, SparkleIcon, DiaryIcon, ExternalLinkIcon, ReplaceIcon, HistoryIcon, MessageSquareQuote, ScaleIcon, FlaskConicalIcon, Edit, LightbulbIcon, Check, RefreshCw, BookOpenIcon, StickyNoteIcon, GraduationCapIcon, MicrophoneIcon, Trash2, MessageSquarePlus } from './icons';
+import { ChevronLeft, BrainCircuit, Network, PlusCircle, LinkIcon, RssIcon, SparkleIcon, DiaryIcon, ExternalLinkIcon, ReplaceIcon, HistoryIcon, MessageSquareQuote, ScaleIcon, FlaskConicalIcon, Edit, LightbulbIcon, Check, RefreshCw, BookOpenIcon, StickyNoteIcon, GraduationCapIcon, MicrophoneIcon, Trash2, MessageSquarePlus, Search, X } from './icons';
 
 interface ProjectDiaryPanelProps {
     isOpen: boolean;
@@ -69,6 +69,75 @@ const socraticActionNames: Record<string, string> = {
     add_alternative_hypothesis: 'Add Alternative',
     refine_link: 'Refine Link',
     remove_link: 'Remove Link',
+};
+
+// This function generates the searchable text content for an activity, mirroring the ActivityText component.
+const getActivityText = (activity: ProjectActivity): string => {
+    const { type, payload } = activity;
+    switch (type) {
+        case 'SOCRATIC_ACTION_TAKEN':
+            return `Socratic Action Taken: ${socraticActionNames[payload.action] || payload.action} - ${socraticStyles[payload.movement]?.name || payload.movement}`;
+        case 'EXPLORE_CONCEPT':
+            return `Explored '${payload.conceptName}' in the Nebula.`;
+        case 'FIND_RELATED':
+            return `Searched for concepts related to '${payload.conceptName}'.`;
+        case 'ADD_TO_TRAY':
+            return `Added '${payload.conceptName}' to the Map Tray.`;
+        case 'CREATE_MAP_LINK':
+            return `Linked '${payload.sourceName}' to '${payload.targetName}'.`;
+        case 'CREATE_USER_NODE':
+            return `Created a new concept: '${payload.conceptName}'.`;
+        case 'ADD_FEED':
+            return `Started tracking a new feed for '${payload.conceptName}'.`;
+        case 'VIEW_PUBLICATION':
+            return `Viewed publication '${payload.publicationTitle}' from the '${payload.sourceNodeName}' feed.`;
+        case 'ANALYZE_GENEALOGY':
+            return `Analyzed genealogy of '${payload.conceptName}'.`;
+        case 'EXPLORE_IMPLICATIONS':
+            return `Explored implications between '${payload.sourceName}' and '${payload.targetName}'.`;
+        case 'CHANGE_CONCEPT':
+            return `Replaced '${payload.oldConceptName}' with '${payload.newConceptName}' on the map.`;
+        case 'SYNTHESIZE_REGION':
+            return `Synthesized '${payload.newConceptName}' from ${payload.sourceConceptCount} concepts.`;
+        case 'ANALYZE_ARGUMENT':
+             return `Analyzed the argument between '${payload.sourceName}' and '${payload.targetName}'.`;
+        case 'FORMALIZE_ARGUMENT':
+            const premiseText = payload.premiseNames ? `premises '${payload.premiseNames.join(', ')}'` : `premise '${payload.sourceName}'`;
+            return `Formalized the argument from ${premiseText} to '${payload.conclusionName || payload.targetName}'.`;
+        case 'CREATE_LOGICAL_CONSTRUCT':
+            return `Created a logical construct for the argument concluding in '${payload.conclusionName}'.`;
+        case 'GENERATE_JUSTIFICATION':
+            return `Generated justification for the link between '${payload.sourceName}' and '${payload.targetName}'.`;
+        case 'EDIT_NOTE':
+            return `Edited note '${payload.noteTitle}' for '${payload.conceptName}'.`;
+        case 'ASK_AI_ASSISTANT':
+            const context = payload.isFollowUp ? 'Follow-up with AI' : 'Used AI Assistant';
+            return `${context}${payload.context ? ` on "${payload.context}"` : ''}: "${payload.userInstruction}"`;
+        case 'INITIATE_BELIEF_CHALLENGE_FROM_MAP':
+            return `Initiated challenge from map link: "${payload.generatedBelief}".`;
+        case 'START_BELIEF_CHALLENGE':
+            return `Started belief challenge: "${payload.belief}"`;
+        case 'BUILD_BELIEF_CHALLENGE_PATH':
+             return `Built a personalized challenge path with ${payload.conceptCount} topics for the belief "${payload.belief}"`;
+        case 'COMPLETE_BELIEF_CHALLENGE':
+            return `Completed belief challenge on "${payload.belief}".`;
+        case 'IMPORT_NOTES':
+            return `Imported ${payload.noteCount} notes from '${payload.title}'.`;
+        case 'ADD_NOTE_TO_MAP':
+            return `Added note as '${payload.synthesizedTitle}' from '${payload.title}'.`;
+        case 'APPEND_NOTE_TO_NODE':
+            return `Appended ${payload.noteCount} note${payload.noteCount > 1 ? 's' : ''} from '${payload.sourceTitle}' to '${payload.conceptName}'.`;
+        case 'ANALYZE_RESEARCH_TRENDS':
+            return `Analyzed research trends for '${payload.conceptName}' using ${payload.publicationCount} publications.`;
+        case 'VOICE_NOTE':
+            return `Transcribed a voice note in '${payload.conceptName}'.`;
+        case 'CREATE_NOTE':
+            return `Created note '${payload.noteTitle}' in '${payload.conceptName}'.`;
+        case 'DELETE_NOTE':
+            return `Deleted note '${payload.noteTitle}' from '${payload.conceptName}'.`;
+        default:
+            return type;
+    }
 };
 
 const ActivityText: React.FC<{ activity: ProjectActivity }> = ({ activity }) => {
@@ -153,6 +222,24 @@ const ActivityText: React.FC<{ activity: ProjectActivity }> = ({ activity }) => 
 
 
 const ProjectDiaryPanel: React.FC<ProjectDiaryPanelProps> = ({ isOpen, onClose, entries }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+
+    useEffect(() => {
+        if (!isOpen) {
+            setSearchQuery('');
+        }
+    }, [isOpen]);
+
+    const filteredEntries = useMemo(() => {
+        if (!searchQuery.trim()) {
+            return entries;
+        }
+        const lowerCaseQuery = searchQuery.toLowerCase();
+        return entries.filter(entry =>
+            getActivityText(entry).toLowerCase().includes(lowerCaseQuery)
+        );
+    }, [searchQuery, entries]);
+
 
     return (
         <div 
@@ -161,18 +248,40 @@ const ProjectDiaryPanel: React.FC<ProjectDiaryPanelProps> = ({ isOpen, onClose, 
             aria-modal="true"
             aria-labelledby="diary-title"
         >
-            <div className="flex justify-between items-center p-4 border-b border-gray-600 flex-shrink-0">
-                <h3 id="diary-title" className="text-lg font-bold text-cyan-300 flex items-center gap-2">
-                    <DiaryIcon className="w-6 h-6"/>
-                    Project Diary
-                </h3>
-                <button onClick={onClose} className="text-gray-400 hover:text-white" aria-label="Close project diary">
-                    <ChevronLeft className="w-6 h-6" />
-                </button>
+            <div className="flex flex-col p-4 border-b border-gray-600 flex-shrink-0 gap-4">
+                <div className="flex justify-between items-center">
+                    <h3 id="diary-title" className="text-lg font-bold text-cyan-300 flex items-center gap-2">
+                        <DiaryIcon className="w-6 h-6"/>
+                        Project Diary
+                    </h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-white" aria-label="Close project diary">
+                        <ChevronLeft className="w-6 h-6" />
+                    </button>
+                </div>
+                 <div className="relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <input
+                        type="text"
+                        placeholder="Search diary..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-gray-800 border border-gray-600 rounded-md py-2 pl-9 pr-8 text-sm text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                        aria-label="Search diary entries"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white"
+                            aria-label="Clear search"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
             </div>
-            {entries.length > 0 ? (
+            {filteredEntries.length > 0 ? (
                 <ul className="p-2 overflow-y-auto flex-grow">
-                    {entries.map(activity => (
+                    {filteredEntries.map(activity => (
                         <li key={activity.id} className="p-3 mb-1.5 bg-gray-800/50 rounded-md">
                             <div className="flex items-start gap-3">
                                 <div className="mt-1 flex-shrink-0">
@@ -228,8 +337,12 @@ const ProjectDiaryPanel: React.FC<ProjectDiaryPanelProps> = ({ isOpen, onClose, 
             ) : (
                 <div className="p-4 text-center text-gray-400 text-sm flex-grow flex flex-col items-center justify-center">
                     <BrainCircuit className="w-16 h-16 text-gray-600 mb-4" />
-                    <p className="font-semibold">Your project activity will be logged here.</p>
-                    <p className="mt-2 text-xs">Explore concepts, build your map, and track feeds to see your history unfold.</p>
+                    <p className="font-semibold">
+                        {searchQuery ? 'No matching activities found.' : 'Your project activity will be logged here.'}
+                    </p>
+                    <p className="mt-2 text-xs">
+                        {searchQuery ? `Try a different search term.` : 'Explore concepts, build your map, and track feeds to see your history unfold.'}
+                    </p>
                 </div>
             )}
         </div>
