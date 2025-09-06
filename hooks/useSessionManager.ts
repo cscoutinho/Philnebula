@@ -301,6 +301,39 @@ export const useSessionManager = () => {
         }));
     }, []);
 
+    const handleArchiveProject = useCallback((projectId: string) => {
+        setSession(prev => {
+            const newProjects = prev.projects.map(p => 
+                p.id === projectId ? { ...p, isArchived: true } : p
+            );
+            
+            // Se o projeto ativo foi arquivado, mude para outro projeto ativo
+            let newActiveProjectId = prev.activeProjectId;
+            if (prev.activeProjectId === projectId) {
+                const activeProjects = newProjects.filter(p => !p.isArchived);
+                if (activeProjects.length > 0) {
+                    newActiveProjectId = activeProjects[0].id;
+                } else {
+                    // Se não há projetos ativos, crie um novo projeto padrão
+                    const newProject = createNewProject("New Project");
+                    newProjects.push(newProject);
+                    newActiveProjectId = newProject.id;
+                }
+            }
+            
+            return { ...prev, projects: newProjects, activeProjectId: newActiveProjectId };
+        });
+    }, []);
+
+    const handleUnarchiveProject = useCallback((projectId: string) => {
+        setSession(prev => ({
+            ...prev,
+            projects: prev.projects.map(p => 
+                p.id === projectId ? { ...p, isArchived: false } : p
+            )
+        }));
+    }, []);
+
     return {
         session,
         setSession,
@@ -312,5 +345,7 @@ export const useSessionManager = () => {
         handleSwitchProject,
         handleDeleteProject,
         handleRenameProject,
+        handleArchiveProject,
+        handleUnarchiveProject,
     };
 };

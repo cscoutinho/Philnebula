@@ -341,6 +341,7 @@ export interface Project {
   id: string;
   name: string;
   data: AppSessionData;
+  isArchived?: boolean;
 }
 
 export interface MultiProjectSession {

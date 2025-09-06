@@ -37,6 +37,8 @@ interface NexusViewProps {
     onSwitchProject: (projectId: string) => void;
     onDeleteProject: (projectId: string) => void;
     onRenameProject: (projectId: string, newName: string) => void;
+    onArchiveProject: (projectId: string) => void;
+    onUnarchiveProject: (projectId: string) => void;
     onRequestConfirmation: any;
     onNavigateToMapNode: (mapId: string, nodeId: string | number) => void;
 }
@@ -164,6 +166,8 @@ const SidePanel: React.FC<{
     onSwitchProject: (projectId: string) => void;
     onDeleteProject: (projectId: string) => void;
     onRenameProject: (projectId: string, newName: string) => void;
+    onArchiveProject: (projectId: string) => void;
+    onUnarchiveProject: (projectId: string) => void;
     onRequestConfirmation: any;
     tagCounts: Map<string, number>;
     maps: AppSessionData['maps'];
@@ -174,7 +178,7 @@ const SidePanel: React.FC<{
     totalNoteCount: number;
 }> = ({ 
     tags, onUpdateTags, searchQuery, setSearchQuery, selectedTagIds, setSelectedTagIds, isCollapsed, onToggleCollapse, 
-    session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation, 
+    session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onArchiveProject, onUnarchiveProject, onRequestConfirmation, 
     tagCounts, maps, conceptsWithNotesByMap, selectedContextFilter, onSetContextFilter, noteCountsByMap, totalNoteCount
 }) => {
     const [editingTag, setEditingTag] = useState<AppTag | null>(null);
@@ -233,6 +237,8 @@ const SidePanel: React.FC<{
                             onSwitchProject={onSwitchProject}
                             onDeleteProject={onDeleteProject}
                             onRenameProject={onRenameProject}
+                            onArchiveProject={onArchiveProject}
+                            onUnarchiveProject={onUnarchiveProject}
                             onRequestConfirmation={onRequestConfirmation}
                         />
                         
@@ -349,7 +355,8 @@ const SidePanel: React.FC<{
 const NexusView: React.FC<NexusViewProps> = ({ 
     allUserNotes, activeProjectData, updateActiveProjectData, onOpenStudioForNexusNote, 
     focusNoteId, onClearFocusNote, focusTagId, onClearFocusTag, onUpdateNexusLayout, onUpdateTags,
-    session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, onRequestConfirmation,
+    session, activeProject, onCreateProject, onSwitchProject, onDeleteProject, onRenameProject, 
+    onArchiveProject, onUnarchiveProject, onRequestConfirmation,
     onNavigateToMapNode
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
@@ -682,6 +689,8 @@ const NexusView: React.FC<NexusViewProps> = ({
                 onSwitchProject={onSwitchProject}
                 onDeleteProject={onDeleteProject}
                 onRenameProject={onRenameProject}
+                onArchiveProject={onArchiveProject}
+                onUnarchiveProject={onUnarchiveProject}
                 onRequestConfirmation={onRequestConfirmation}
                 tagCounts={tagCounts}
                 maps={activeProjectData.maps || []}

@@ -148,6 +148,8 @@ const App: React.FC = () => {
         handleSwitchProject,
         handleDeleteProject,
         handleRenameProject,
+        handleArchiveProject,
+        handleUnarchiveProject,
     } = useSessionManager();
 
     const {
@@ -1110,6 +1112,8 @@ const App: React.FC = () => {
                         onSwitchProject={handleSwitchProject}
                         onDeleteProject={handleDeleteProject}
                         onRenameProject={handleRenameProject}
+                        onArchiveProject={handleArchiveProject}
+                        onUnarchiveProject={handleUnarchiveProject}
                         onRequestConfirmation={requestConfirmation}
                         onNavigateToMapNode={handleNavigateToMapNode}
                     />
@@ -1182,6 +1186,8 @@ const App: React.FC = () => {
                             onSwitchProject={handleSwitchProject}
                             onDeleteProject={handleDeleteProject}
                             onRenameProject={handleRenameProject}
+                            onArchiveProject={handleArchiveProject}
+                            onUnarchiveProject={handleUnarchiveProject}
                             onRequestConfirmation={requestConfirmation}
                         />
                     )}
