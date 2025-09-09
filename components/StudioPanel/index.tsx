@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { GoogleGenAI, Type, Chat } from '@google/genai';
 import type { ProjectActivityType, KindleNote, UserNote, AppTag } from '../../types';
-import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon, QuoteIcon, ChevronLeft, ChevronRight } from '../icons';
+import { X, NoteIcon, DownloadIcon, UndoIcon, RedoIcon, BoldIcon, ItalicIcon, SparkleIcon, Check, PaletteIcon, FontSizeIcon, RefreshCw, CopyIcon, InsertBelowIcon, FlaskConicalIcon, SendIcon, Plus, BookOpenIcon, StickyNoteIcon, Trash2, MicrophoneIcon, StopCircleIcon, QuoteIcon, ChevronLeft, ChevronRight, LinkIcon } from '../icons';
 
 const useHistoryState = <T,>(initialState: T): [T, (newState: T, immediate?: boolean) => void, () => void, () => void, boolean, boolean] => {
     const [history, setHistory] = useState<T[]>([initialState]);
@@ -766,19 +766,14 @@ Text: "${analysisText}"`;
                             onSave={(id, title, content) => {
                                 const isNewNote = !initialUserNotes.some(n => n.id === id);
                                 handleUpdateNote(id, title, content);
-                                
                                 if (isNewNote) {
-                                    logActivity('CREATE_NOTE', {
-                                        conceptName: nodeName,
-                                        noteTitle: title,
-                                    });
+                                    logActivity('CREATE_NOTE', { conceptName: nodeName, noteTitle: title });
                                 } else {
                                     onLogEdit(state.nodeId, title);
                                 }
-                                onClose();
                             }}
                             onDelete={handleDeleteNote}
-                            onCancel={onClose}
+                            onClose={onClose}
                             onAiRequest={handleAiRequest}
                             ai={ai}
                             logActivity={logActivity}
@@ -925,7 +920,7 @@ interface EditableNoteCardProps {
     note: UserNote;
     onSave: (id: string, title: string, content: string) => void;
     onDelete: (id: string) => void;
-    onCancel: () => void;
+    onClose: () => void;
     onAiRequest: (text: string, range: Range) => void;
     ai: GoogleGenAI;
     logActivity: (type: ProjectActivityType, payload: { [key: string]: any }) => void;
@@ -934,7 +929,7 @@ interface EditableNoteCardProps {
     onNavigateToNote: (noteId: string) => void;
 }
 
-const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDelete, onCancel, onAiRequest, ai, logActivity, nodeName, allProjectNotes, onNavigateToNote }) => {
+const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDelete, onClose, onAiRequest, ai, logActivity, nodeName, allProjectNotes, onNavigateToNote }) => {
     const [title, setTitle] = useState(note.title);
     const [content, setContent, undo, redo, canUndo, canRedo] = useHistoryState(note.content);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -945,12 +940,17 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
     const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const [isJustSaved, setIsJustSaved] = useState(false);
     
     type LinkSearchState = { query: string; range: Range; position: { top: number, left: number } };
     const [linkSearch, setLinkSearch] = useState<LinkSearchState | null>(null);
     
     const [linkEditState, setLinkEditState] = useState<{ target: HTMLSpanElement, rect: DOMRect } | null>(null);
     const [aliasText, setAliasText] = useState('');
+    
+    const [linkModalState, setLinkModalState] = useState<{ range: Range; existingLink?: HTMLAnchorElement | null } | null>(null);
+    const [linkPreviewState, setLinkPreviewState] = useState<{ url: string; rect: DOMRect } | null>(null);
+
 
     const handleAiSelection = useCallback(() => {
         const selection = window.getSelection();
@@ -1249,7 +1249,7 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
     useEffect(() => {
         const editor = editorRef.current;
         if (!editor) return;
-
+        
         const handleContextMenu = (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             if (target.classList.contains('nexus-link')) {
@@ -1260,30 +1260,57 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
         };
 
         const handleClick = (e: MouseEvent) => {
-            // Close context menu if clicking outside of it
             if (linkEditState && !(e.target as HTMLElement).closest('.link-edit-popover')) {
                 setLinkEditState(null);
             }
+            if (linkModalState && !(e.target as HTMLElement).closest('.weblink-modal-popover')) {
+                setLinkModalState(null);
+            }
+            if (linkPreviewState && !(e.target as HTMLElement).closest('.link-preview-popover')) {
+                setLinkPreviewState(null);
+            }
+            
+            const nexusLinkTarget = (e.target as HTMLElement).closest('span.nexus-link');
+            // FIX: Cast result of closest to HTMLAnchorElement to access href property.
+            const webLinkTarget = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.weblink');
 
-            const target = e.target as HTMLElement;
-            if (target.classList.contains('nexus-link')) {
+            if (webLinkTarget) {
                 e.preventDefault();
-                const noteId = target.getAttribute('data-note-id');
+                setLinkPreviewState({ url: webLinkTarget.href, rect: webLinkTarget.getBoundingClientRect() });
+                return;
+            }
+
+            if (nexusLinkTarget) {
+                e.preventDefault();
+                const noteId = nexusLinkTarget.getAttribute('data-note-id');
                 if (noteId) {
                     onNavigateToNote(noteId);
                 }
             }
         };
 
+        const handleDoubleClick = (e: MouseEvent) => {
+            // FIX: Cast result of closest to HTMLAnchorElement to access href property.
+            const webLinkTarget = (e.target as HTMLElement).closest<HTMLAnchorElement>('a.weblink');
+            if (webLinkTarget) {
+                e.preventDefault();
+                window.open(webLinkTarget.href, '_blank', 'noopener,noreferrer');
+                setLinkPreviewState(null);
+            }
+        };
+
         editor.addEventListener('contextmenu', handleContextMenu);
-        document.addEventListener('click', handleClick);
+        editor.addEventListener('click', handleClick);
+        editor.addEventListener('dblclick', handleDoubleClick);
+
         return () => {
             if (editor) {
                 editor.removeEventListener('contextmenu', handleContextMenu);
+                editor.removeEventListener('click', handleClick);
+                editor.removeEventListener('dblclick', handleDoubleClick);
             }
-            document.removeEventListener('click', handleClick);
         };
-    }, [onNavigateToNote, linkEditState]);
+    }, [onNavigateToNote, linkEditState, linkModalState, linkPreviewState]);
 
     const handleUpdateAlias = () => {
         if (!linkEditState || !editorRef.current) return;
@@ -1326,6 +1353,51 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
     const escapeRegExp = (string: string) => {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
+    
+    const handleLinkCommand = () => {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || !editorRef.current) return;
+        const range = selection.getRangeAt(0);
+
+        if (!editorRef.current.contains(range.commonAncestorContainer)) return;
+
+        const parentElement = range.startContainer.parentElement;
+        // FIX: Cast result of closest to HTMLAnchorElement to satisfy type of linkModalState.
+        const existingLink = parentElement?.closest<HTMLAnchorElement>('a.weblink');
+        
+        setLinkModalState({ range, existingLink });
+    };
+
+    const handleSaveWebLink = (url: string, alias: string, range: Range, existingLink?: HTMLAnchorElement | null) => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        
+        const selection = window.getSelection();
+        if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+
+        if (existingLink) {
+            existingLink.href = url;
+            existingLink.textContent = alias.trim() || url;
+        } else {
+            const selectedText = range.toString();
+            const text = alias.trim() || selectedText.trim() || url;
+            const linkHtml = `<a href="${escapeHtml(url)}" class="weblink" data-weblink="true" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
+            document.execCommand('insertHTML', false, linkHtml);
+        }
+        
+        setContent(editorRef.current!.innerHTML, true);
+        setLinkModalState(null);
+    };
+    
+    const handleSaveClick = () => {
+        if (!editorRef.current) return;
+        onSave(note.id, title, editorRef.current.innerHTML);
+        setIsJustSaved(true);
+        setTimeout(() => setIsJustSaved(false), 2000);
+    };
 
     return (
         <div className="flex-grow flex flex-col h-full relative editable-note-card-root">
@@ -1345,6 +1417,7 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('bold')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Bold"><BoldIcon className="w-4 h-4"/></button>
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('italic')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Italic"><ItalicIcon className="w-4 h-4"/></button>
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => handleExecCommand('formatBlock', 'blockquote')} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Blockquote"><QuoteIcon className="w-4 h-4"/></button>
+                 <button onMouseDown={(e) => e.preventDefault()} onClick={handleLinkCommand} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Add/Edit Web Link"><LinkIcon className="w-4 h-4"/></button>
                 <div className="w-px h-5 bg-gray-600 mx-1"></div>
                 <div className="relative">
                     <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setIsColorPickerOpen(p => !p); setIsFontSizePickerOpen(false); }} className="p-1.5 text-gray-300 hover:bg-gray-700 rounded" title="Text Color"><PaletteIcon className="w-4 h-4"/></button>
@@ -1399,6 +1472,8 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
                     style={{'--nexus-link-bg': 'rgba(6, 182, 212, 0.15)', '--nexus-link-border': '#0891b2', '--nexus-link-text': '#a5f3fc'} as React.CSSProperties}
                 />
             </div>
+            {linkModalState && <WebLinkModal modalState={linkModalState} onClose={() => setLinkModalState(null)} onSave={handleSaveWebLink} />}
+            {linkPreviewState && <WebLinkPreview previewState={linkPreviewState} onClose={() => setLinkPreviewState(null)} />}
              {linkSearch && (
                 <div 
                     className="absolute bg-gray-800 border border-gray-600 rounded-md shadow-lg p-1 z-50 text-white text-sm w-72"
@@ -1462,7 +1537,7 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
                              const highlightedContext = context.replace(new RegExp(escapeRegExp(linkText), 'i'), `<strong class="text-yellow-300 bg-yellow-500/20 px-1 rounded">${linkText}</strong>`);
                              return (
                                 <li key={note.id} className="mb-3 last:mb-0">
-                                    <button onClick={() => { onCancel(); onNavigateToNote(note.id); }} className="font-semibold text-cyan-300 hover:underline text-left">
+                                    <button onClick={() => { onClose(); onNavigateToNote(note.id); }} className="font-semibold text-cyan-300 hover:underline text-left">
                                         {note.title}
                                     </button>
                                     <p className="text-xs text-gray-500 italic px-2 border-l-2 border-gray-600 ml-1 mt-1" dangerouslySetInnerHTML={{ __html: highlightedContext }} />
@@ -1475,9 +1550,121 @@ const EditableNoteCard: React.FC<EditableNoteCardProps> = ({ note, onSave, onDel
             <div className="flex-shrink-0 p-2 border-t border-gray-700 flex justify-between items-center bg-gray-800/50">
                 <button onClick={() => onDelete(note.id)} className="p-2 text-gray-400 hover:text-red-400 rounded-md"><Trash2 className="w-4 h-4"/></button>
                 <div className="flex gap-2">
-                    <button onClick={onCancel} className="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">Cancel</button>
-                    <button onClick={() => onSave(note.id, title, editorRef.current?.innerHTML || content)} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-md">Save & Close</button>
+                    <button onClick={onClose} className="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-500 rounded-md">Close</button>
+                    <button
+                        onClick={handleSaveClick}
+                        disabled={isJustSaved}
+                        className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 flex items-center justify-center min-w-[80px] ${
+                            isJustSaved 
+                                ? 'bg-green-600 text-white' 
+                                : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                        }`}
+                    >
+                        {isJustSaved ? (
+                            <span className="flex items-center gap-1.5">
+                                <Check className="w-4 h-4"/>
+                                Saved!
+                            </span>
+                        ) : (
+                            'Save'
+                        )}
+                    </button>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const WebLinkModal: React.FC<{
+    modalState: { range: Range, existingLink?: HTMLAnchorElement | null };
+    onClose: () => void;
+    onSave: (url: string, alias: string, range: Range, existingLink?: HTMLAnchorElement | null) => void;
+}> = ({ modalState, onClose, onSave }) => {
+    const [url, setUrl] = useState('');
+    const [alias, setAlias] = useState('');
+    const modalRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (modalState.existingLink) {
+            setUrl(modalState.existingLink.href);
+            setAlias(modalState.existingLink.textContent || '');
+        } else {
+            setUrl('https://');
+            setAlias(modalState.range.toString());
+        }
+    }, [modalState]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave(url, alias, modalState.range, modalState.existingLink);
+    };
+
+    return (
+        <div className="absolute top-0 left-0 w-full h-full bg-black/50 flex items-center justify-center z-50 weblink-modal-popover" onMouseDown={onClose}>
+            <div ref={modalRef} className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-4 w-96 space-y-4 animate-fade-in" onMouseDown={e => e.stopPropagation()}>
+                <h4 className="font-bold text-lg">{modalState.existingLink ? 'Edit Web Link' : 'Add Web Link'}</h4>
+                <form onSubmit={handleSubmit} className="space-y-3">
+                    <div>
+                        <label htmlFor="weblink-url" className="block text-sm font-medium text-gray-300 mb-1">URL</label>
+                        <input id="weblink-url" type="url" value={url} onChange={e => setUrl(e.target.value)} required autoFocus className="w-full p-2 bg-gray-900 border border-gray-600 rounded-md text-sm"/>
+                    </div>
+                    <div>
+                        <label htmlFor="weblink-alias" className="block text-sm font-medium text-gray-300 mb-1">Display Text (optional)</label>
+                        <input id="weblink-alias" type="text" value={alias} onChange={e => setAlias(e.target.value)} placeholder="Enter alias..." className="w-full p-2 bg-gray-900 border border-gray-600 rounded-md text-sm"/>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" onClick={onClose} className="px-3 py-1.5 bg-gray-600 rounded">Cancel</button>
+                        <button type="submit" className="px-3 py-1.5 bg-cyan-600 text-white rounded">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+const WebLinkPreview: React.FC<{
+    previewState: { url: string, rect: DOMRect };
+    onClose: () => void;
+}> = ({ previewState, onClose }) => {
+    const [isLoading, setIsLoading] = useState(true);
+    const popoverRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        setIsLoading(true);
+    }, [previewState.url]);
+    
+    useEffect(() => {
+        const popover = popoverRef.current;
+        if (!popover) return;
+        
+        const { innerWidth, innerHeight } = window;
+        let top = previewState.rect.bottom + 10;
+        let left = previewState.rect.left;
+
+        const popoverRect = popover.getBoundingClientRect();
+        if (top + popoverRect.height > innerHeight) {
+            top = previewState.rect.top - popoverRect.height - 10;
+        }
+        if (left + popoverRect.width > innerWidth) {
+            left = innerWidth - popoverRect.width - 10;
+        }
+        if (left < 10) left = 10;
+
+        popover.style.top = `${top}px`;
+        popover.style.left = `${left}px`;
+    }, [previewState.rect]);
+
+    return (
+        <div ref={popoverRef} className="link-preview-popover animate-fade-in" onMouseDown={e => e.stopPropagation()}>
+            <iframe
+                src={previewState.url}
+                title="Web Link Preview"
+                sandbox="allow-scripts allow-same-origin"
+                onLoad={() => setIsLoading(false)}
+                onError={() => setIsLoading(false)}
+            />
+            <div className="preview-footer">
+                {isLoading ? 'Loading preview...' : 'Some sites may not load due to security settings.'}
             </div>
         </div>
     );
